@@ -1,7 +1,7 @@
 FROM ros:noetic
 
 # These are some extra dependencies we need to use the Robobo, don't worry about it.
-RUN apt-get update -y && apt-get install ffmpeg libsm6 libxext6 ros-noetic-opencv-apps dos2unix -y && rm -rf /var/lib/apt/lists/*
+RUN apt-get update -y && apt-get install ffmpeg libsm6 libxext6 ros-noetic-opencv-apps dos2unix vim -y && rm -rf /var/lib/apt/lists/*
 
 # Install CURL, as we need it for debugging.
 # Add anything you want to also have available here.
