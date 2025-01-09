@@ -80,6 +80,31 @@ def run_all_actions(rob: IRobobo):
         test_hardware(rob)
 
     test_phone_movement(rob)
+    print("IRS data: ", rob.read_irs())
 
     if isinstance(rob, SimulationRobobo):
         rob.stop_simulation()
+
+
+def test_irs(rob:IRobobo):
+    rob.move_blocking(0,0,1000)
+    print("IRS data: ", rob.read_irs())
+
+    print("Front center sensor: ", rob.read_irs()[4])
+    print('move')
+    rob.move_blocking(100,100,500)
+    rob.sleep(1)
+
+    print("Front center sensor: ", rob.read_irs()[4])
+    print('move')
+    rob.move_blocking(100,100,500)
+    rob.sleep(1)
+
+    print("Front center sensor: ", rob.read_irs()[4])
+    print('move')
+    rob.move_blocking(100,100,500)
+    rob.sleep(1)
+
+    print("Front center sensor: ", rob.read_irs()[4])
+    print('move')
+    rob.move_blocking(100,100,500)
