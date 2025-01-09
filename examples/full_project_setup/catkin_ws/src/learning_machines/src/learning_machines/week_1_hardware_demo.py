@@ -39,7 +39,19 @@ def stop_at_obstacle(rob: IRobobo, sensor_id: str):
     
     if isinstance(rob, SimulationRobobo):
         # todo: implement, use test_actions for inspiration
-        break 
+        print('waiting for obstacle...')
+        rob.play_simulation() #this makes the simulation run
+        while True:
+            irs = rob.read_irs()
+            print(irs[sensor_index])
+            if irs[sensor_index] > 200:
+                print('Obstacle detected!')
+                break
+            if sensor_id == 'FrontC':
+                rob.move_blocking(10, 10, 500)
+            else:
+                rob.move_blocking(-10, -10, 500)
+        # break 
         
         
 
