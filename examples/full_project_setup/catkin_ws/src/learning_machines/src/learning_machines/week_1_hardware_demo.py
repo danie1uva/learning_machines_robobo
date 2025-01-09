@@ -52,7 +52,7 @@ def stop_at_obstacle(rob: IRobobo, sensor_id: str):
             print(irs[sensor_index])
             if irs[sensor_index] > 200:
                 print('Obstacle detected!')
-                file_path = str(READINGS_DIR / f"{sensor_id}_readings.txt")
+                file_path = str(READINGS_DIR / f"{sensor_id}_readings_simulation.txt")
                 with open(file_path, "w") as f:
                     for reading in sensor_readings:
                         f.write(f"{reading}\n")
@@ -61,7 +61,6 @@ def stop_at_obstacle(rob: IRobobo, sensor_id: str):
                 rob.move_blocking(10, 10, 500)
             else:
                 rob.move_blocking(-10, -10, 500)
-        # break 
         
         
 
