@@ -24,15 +24,34 @@ irs_positions = {
 
 def stop_at_obstacle(rob: IRobobo, sensor_id: str):
     sensor_index = irs_positions[sensor_id]
-    print('waiting for obstacle...')
-    while True:
-        irs = rob.read_irs()
-        print(irs[sensor_index])
-        if irs[sensor_index] > 200:
-            print('Obstacle detected!')
-            break
-        if sensor_id == 'FrontC':
-            rob.move_blocking(10, 10, 500)
-        else:
-            rob.move_blocking(-10, -10, 500)
+    if isinstance(rob, HardwareRobobo):
+        print('waiting for obstacle...')
+        while True:
+            irs = rob.read_irs()
+            print(irs[sensor_index])
+            if irs[sensor_index] > 200:
+                print('Obstacle detected!')
+                break
+            if sensor_id == 'FrontC':
+                rob.move_blocking(10, 10, 500)
+            else:
+                rob.move_blocking(-10, -10, 500)
+    
+    if isinstance(rob, SimulationRobobo):
+        # todo: implement, use test_actions for inspiration
+        print('waiting for obstacle...')
+        rob.play_simulation() #this makes the simulation run
+        while True:
+            irs = rob.read_irs()
+            print(irs[sensor_index])
+            if irs[sensor_index] > 200:
+                print('Obstacle detected!')
+                break
+            if sensor_id == 'FrontC':
+                rob.move_blocking(10, 10, 500)
+            else:
+                rob.move_blocking(-10, -10, 500)
+        # break 
+        
+        
 
