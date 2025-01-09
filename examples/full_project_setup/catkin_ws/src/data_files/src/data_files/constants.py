@@ -17,4 +17,10 @@ FIGURES_DIR.mkdir(exist_ok=True)
 if not FIGURES_DIR.is_dir():
     raise ImportError(_ERROR_STR)
 
-__all__ = ("RESULTS_DIR", "FIGURES_DIR")
+READINGS_DIR = RESULTS_DIR / "readings"
+READINGS_DIR.mkdir(exist_ok=True)
+
+if not READINGS_DIR.is_dir():
+    raise ImportError(_ERROR_STR)
+
+__all__ = ("RESULTS_DIR", "FIGURES_DIR", "READINGS_DIR")

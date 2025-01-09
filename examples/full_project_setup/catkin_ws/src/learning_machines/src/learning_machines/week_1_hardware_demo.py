@@ -1,6 +1,6 @@
 import cv2
 
-from data_files import FIGURES_DIR
+from data_files import FIGURES_DIR, READINGS_DIR
 from robobo_interface import (
     IRobobo,
     Emotion,
@@ -24,13 +24,19 @@ irs_positions = {
 
 def stop_at_obstacle(rob: IRobobo, sensor_id: str):
     sensor_index = irs_positions[sensor_id]
+    sensor_readings = []
     if isinstance(rob, HardwareRobobo):
         print('waiting for obstacle...')
         while True:
             irs = rob.read_irs()
+            sensor_readings.append(irs) 
             print(irs[sensor_index])
             if irs[sensor_index] > 200:
                 print('Obstacle detected!')
+                file_path = str(READINGS_DIR / f"{sensor_id}_readings.txt")
+                with open(file_path, "w") as f:
+                    for reading in sensor_readings:
+                        f.write(f"{reading}\n")
                 break
             if sensor_id == 'FrontC':
                 rob.move_blocking(10, 10, 500)
@@ -38,7 +44,6 @@ def stop_at_obstacle(rob: IRobobo, sensor_id: str):
                 rob.move_blocking(-10, -10, 500)
     
     if isinstance(rob, SimulationRobobo):
-        # todo: implement, use test_actions for inspiration
         print('waiting for obstacle...')
         rob.play_simulation() #this makes the simulation run
         while True:
@@ -46,6 +51,10 @@ def stop_at_obstacle(rob: IRobobo, sensor_id: str):
             print(irs[sensor_index])
             if irs[sensor_index] > 200:
                 print('Obstacle detected!')
+                file_path = str(READINGS_DIR / f"{sensor_id}_readings.txt")
+                with open(file_path, "w") as f:
+                    for reading in sensor_readings:
+                        f.write(f"{reading}\n")
                 break
             if sensor_id == 'FrontC':
                 rob.move_blocking(10, 10, 500)
