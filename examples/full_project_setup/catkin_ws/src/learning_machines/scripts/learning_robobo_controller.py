@@ -18,6 +18,6 @@ if __name__ == "__main__":
         rob = SimulationRobobo()
     else:
         raise ValueError(f"{sys.argv[1]} is not a valid argument.")
-
+    
     stop_at_obstacle(rob, 'FrontC')
     stop_at_obstacle(rob, 'BackC')

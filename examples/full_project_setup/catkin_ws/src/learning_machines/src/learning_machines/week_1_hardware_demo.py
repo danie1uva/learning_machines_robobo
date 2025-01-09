@@ -24,13 +24,15 @@ irs_positions = {
 
 def stop_at_obstacle(rob: IRobobo, sensor_id: str):
     sensor_index = irs_positions[sensor_id]
+    print('waiting for obstacle...')
     while True:
         irs = rob.read_irs()
-        if irs[sensor_index] > 400:
+        print(irs[sensor_index])
+        if irs[sensor_index] > 200:
             print('Obstacle detected!')
             break
         if sensor_id == 'FrontC':
-            rob.move_blocking(80, 80, 50)
+            rob.move_blocking(10, 10, 500)
         else:
-            rob.move_blocking(-80, -80, 50)
+            rob.move_blocking(-10, -10, 500)
 
