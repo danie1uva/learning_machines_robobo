@@ -46,12 +46,12 @@ def stop_at_obstacle(rob: IRobobo, sensor_id: str):
             print(irs[sensor_index])
             if irs[sensor_index] > 200:
                 print('Obstacle detected!')
+                rob.stop_simulation()
                 break
             if sensor_id == 'FrontC':
                 rob.move_blocking(10, 10, 500)
             else:
                 rob.move_blocking(-10, -10, 500)
-        # break 
         
         
 
