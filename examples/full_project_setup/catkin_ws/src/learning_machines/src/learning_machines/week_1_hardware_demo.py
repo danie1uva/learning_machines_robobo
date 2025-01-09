@@ -56,6 +56,8 @@ def stop_at_obstacle(rob: IRobobo, sensor_id: str):
                 with open(file_path, "w") as f:
                     for reading in sensor_readings:
                         f.write(f"{reading}\n")
+                if sensor_id == 'BackC':        
+                    rob.stop_simulation()
                 break
             if sensor_id == 'FrontC':
                 rob.move_blocking(10, 10, 500)
