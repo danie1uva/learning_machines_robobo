@@ -48,7 +48,7 @@ def stop_at_obstacle(rob: IRobobo, sensor_id: str):
         rob.play_simulation() #this makes the simulation run
         while True:
             irs = rob.read_irs()
-            sensor_readings.append(irs) 
+            sensor_readings.append(irs)
             print(irs[sensor_index])
             if irs[sensor_index] > 200:
                 print('Obstacle detected!')
