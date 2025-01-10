@@ -22,6 +22,15 @@ irs_positions = {
     "FrontLL": 7,
 }
 
+def test_sensors(rob: IRobobo):
+    print("IRS data: ", rob.read_irs())
+    image = rob.read_image_front()
+    cv2.imwrite(str(FIGURES_DIR / "photo.png"), image)
+    print("Phone pan: ", rob.read_phone_pan())
+    print("Phone tilt: ", rob.read_phone_tilt())
+    print("Current acceleration: ", rob.read_accel())
+    print("Current orientation: ", rob.read_orientation())
+
 def stop_at_obstacle(rob: IRobobo, sensor_id: str):
     sensor_index = irs_positions[sensor_id]
     sensor_readings = []

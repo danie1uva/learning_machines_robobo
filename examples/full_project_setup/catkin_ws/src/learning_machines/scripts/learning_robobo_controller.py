@@ -19,5 +19,7 @@ if __name__ == "__main__":
     else:
         raise ValueError(f"{sys.argv[1]} is not a valid argument.")
     
+    test_irs(rob) # this is to pause the robot, hopefully makes sensors read from start of obstacle movement
+    test_irs(rob)
     stop_at_obstacle(rob, 'FrontC')
     stop_at_obstacle(rob, 'BackC')
