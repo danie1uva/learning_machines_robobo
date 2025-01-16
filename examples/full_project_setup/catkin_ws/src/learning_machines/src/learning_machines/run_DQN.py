@@ -57,7 +57,7 @@ class EpsilonGreedyPolicy:
     def sample_action(self, state):
         with torch.no_grad():
             if np.random.rand() < self.epsilon:
-                return np.random.uniform(-100, 100, size=2) 
+                return np.random.uniform(0, 100, size=2) 
             else:
                 state_tensor = torch.tensor(state, dtype=torch.float32).unsqueeze(0)
                 return self.Q(state_tensor).squeeze(0).cpu().numpy()  
@@ -137,7 +137,7 @@ def move_robobo_and_calc_reward(scaler, action, rob, state):
     speed_reward = (abs(left_speed) + abs(right_speed)) / 2
 
     smoothness_reward = -abs(left_speed - right_speed)
-    
+
     collision = check_collision(state)
 
     collision_penalty = -500 if collision else 0
