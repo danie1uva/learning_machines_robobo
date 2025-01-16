@@ -99,7 +99,7 @@ def compute_reward(next_state, action, collision):
     reward = (
         movement_reward +
         2 * speed_reward +
-        0.5 * smoothness_reward +
+        0.05 * smoothness_reward +
         collision_penalty +
         exploration_reward +
         small_movement_penalty
@@ -224,9 +224,9 @@ def run_ppo_training(rob: SimulationRobobo):
             # Clip actions to ensure smooth movement
             left_speed = max(min(left_speed, 100), -100)
             right_speed = max(min(right_speed, 100), -100)
-            if abs(left_speed) + abs(right_speed) < 20:  # Minimum movement threshold
-                left_speed = np.sign(left_speed) * 20
-                right_speed = np.sign(right_speed) * 20
+            # if abs(left_speed) + abs(right_speed) < 20:  # Minimum movement threshold
+            #     left_speed = np.sign(left_speed) * 20
+            #     right_speed = np.sign(right_speed) * 20
 
             rob.move_blocking(left_speed, right_speed, 250)
 
