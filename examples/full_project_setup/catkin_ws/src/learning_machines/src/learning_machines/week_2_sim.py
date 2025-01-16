@@ -249,9 +249,14 @@ def run_ppo_training(rob: SimulationRobobo):
                 done = True
                 break
 
-        # Log the total reward for the episode
+        # Log the total reward, round length, and other metrics for the episode
         print(f"Total reward for episode {episode}: {total_reward}")
-        wandb.log({"episode": episode, "total_reward": total_reward})
+        wandb.log({
+            "episode": episode,
+            "total_reward": total_reward,
+            "round_length": t + 1,  # Number of steps in the round
+            "loss": policy_loss.item() if 'policy_loss' in locals() else 0  # Placeholder for loss if not available
+        })
 
         values.append(0 if done else value_net(torch.tensor(state, dtype=torch.float32).unsqueeze(0)).item())
         advantages = compute_advantages(rewards, values, dones)
