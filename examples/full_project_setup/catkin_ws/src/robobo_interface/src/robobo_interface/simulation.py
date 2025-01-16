@@ -61,7 +61,7 @@ class SimulationRobobo(IRobobo):
 
     def __init__(
         self,
-        identifier: int = 0,
+        identifier: int = 1,
         api_port: Optional[int] = None,
         ip_adress: Optional[str] = None,
         logger: Callable[[str], None] = print,
