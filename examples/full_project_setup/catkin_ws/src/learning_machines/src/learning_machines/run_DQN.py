@@ -17,8 +17,8 @@ from robobo_interface.datatypes import (
     Orientation,
 )
 
-def get_epsilon(it):
-    return max(0.05, 1 - it * 0.95 / 10000)
+def get_epsilon(it, num_rounds_till_plateau=5000):
+    return max(0.05, 1 - it * 0.95 / num_rounds_till_plateau)
 
 class QNetwork(nn.Module):
     def __init__(self, num_hidden=128):
@@ -142,18 +142,11 @@ def move_robobo_and_calc_reward(scaler, action, rob, state):
 
     collision_penalty = -500 if collision else 0
 
-    if left_speed > 0 and right_speed > 0:
-        forward_reward = 50 
-    elif left_speed < 0 or right_speed < 0:
-        forward_reward = -100 
-    else:
-        forward_reward = 0
 
     move_reward = (
         movement_reward
         + 2 * speed_reward
         + .5 * smoothness_reward
-        + forward_reward
         + collision_penalty
     )
 
@@ -161,7 +154,6 @@ def move_robobo_and_calc_reward(scaler, action, rob, state):
         'speed_reward': speed_reward,
         'smoothness_reward': smoothness_reward,
         'collision_penalty': collision_penalty,
-        'forward_reward': forward_reward,
         'move_reward': move_reward
     }
 
@@ -178,10 +170,11 @@ def run_qlearning_classification(rob: IRobobo):
     batch_size = 32
     memory_capacity = 1000
     episodes = 2000 
-    max_steps = 30
+    max_steps = 75
     current_date = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    epsilon = .1
-    run_name = f"{current_date}_hidden{num_hidden}_lr{learning_rate}_gamma{discount_factor}_bs{batch_size}_mem{memory_capacity}_eps{episodes}_steps{max_steps}_epsil{epsilon}"
+    final_explore_rate = .05
+    num_rounds_till_plateau = 5000
+    run_name = f"{current_date}_hidden{num_hidden}_lr{learning_rate}_gamma{discount_factor}_bs{batch_size}_mem{memory_capacity}_eps{episodes}_steps{max_steps}_epsil{final_explore_rate}_rounds_of_exp{num_rounds_till_plateau}"
 
     wandb.init(
         project="learning_machines",
@@ -195,7 +188,7 @@ def run_qlearning_classification(rob: IRobobo):
             "episodes": episodes,
             "max_steps": max_steps,
             "date": current_date,
-            "epsilon": epsilon
+            "final_explore_rate": final_explore_rate
         }
     )
 
@@ -203,21 +196,28 @@ def run_qlearning_classification(rob: IRobobo):
     Q = QNetwork(num_hidden=num_hidden)
     optimizer = optim.Adam(Q.parameters(), lr=learning_rate)
     memory = ReplayMemory(memory_capacity)
-    policy = EpsilonGreedyPolicy(Q, epsilon=epsilon) 
-
+    policy = EpsilonGreedyPolicy(Q, epsilon=final_explore_rate) 
     scaler = joblib.load('software_powertrans_scaler.gz')
-    rob.play_simulation()
+
 
     for round in range(episodes):  
         print(f"Round: {round}")
 
         rob.play_simulation()
+        
+        if round % 20 == 0:
+            validation = True
+            pos = Position(-0.875,-0.098,0)
+            ori = Orientation(-90, -27, -90)
+            rob.set_position(pos, ori)
+        
+        
         state = get_current_state(scaler, rob.read_irs())
         total_reward = 0
         round_length = 0 
 
         for step in range(max_steps):
-            eps = get_epsilon(step)
+            eps = get_epsilon(step, num_rounds_till_plateau)
             policy.set_epsilon(eps)
             action = policy.sample_action(state)
 
@@ -241,7 +241,6 @@ def run_qlearning_classification(rob: IRobobo):
                 'speed_reward': log_entry['speed_reward'],
                 'smoothness_reward': log_entry['smoothness_reward'],
                 'collision_penalty': log_entry['collision_penalty'],
-                'forward_reward': log_entry['forward_reward'],
                 'collision': collision
                 })
             
@@ -254,7 +253,10 @@ def run_qlearning_classification(rob: IRobobo):
         wandb.log({"total_reward": total_reward,
                     "round": round,
                     "round_length": round_length,
+                    "validation": validation
                     }) 
+        
+        validation = False
         
         print(f"Total Reward = {total_reward}")
         rob.stop_simulation()
