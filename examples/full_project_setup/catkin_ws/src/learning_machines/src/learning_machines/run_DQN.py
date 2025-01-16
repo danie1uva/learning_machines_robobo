@@ -17,19 +17,26 @@ from robobo_interface.datatypes import (
     Orientation,
 )
 
-def get_epsilon(it, num_rounds_till_plateau=5000):
+def get_epsilon(it, num_rounds_till_plateau=500):
     return max(0.05, 1 - it * 0.95 / num_rounds_till_plateau)
 
 class QNetwork(nn.Module):
-    def __init__(self, num_hidden=128):
+    def __init__(self, num_hidden=128, num_actions=5):
         super(QNetwork, self).__init__()
         self.l1 = nn.Linear(8, num_hidden)
-        self.l2 = nn.Linear(num_hidden, 2)  
+        self.l2 = nn.Linear(num_hidden, num_actions)
 
     def forward(self, x):
         x = F.relu(self.l1(x))
-        x = torch.sigmoid(self.l2(x))  
-        return x * 100  
+        return self.l2(x)  # Outputs Q-values for each action
+    
+discrete_actions = [
+    (0, 50, 250),  # Left
+    (25, 25, 250),  # Left-center
+    (50, 50, 250),  # Center
+    (75, 25, 250),  # Right-center
+    (100, 0, 250),  # Right
+]
 
 class ReplayMemory:
     def __init__(self, capacity):
@@ -56,27 +63,24 @@ class EpsilonGreedyPolicy:
 
     def sample_action(self, state):
         with torch.no_grad():
-            if np.random.rand() < self.epsilon:
-                return np.random.uniform(0, 100, size=2) 
-            else:
+            if np.random.rand() < self.epsilon:  # Explore
+                return random.randint(0, len(discrete_actions) - 1)  # Return action index
+            else:  # Exploit
                 state_tensor = torch.tensor(state, dtype=torch.float32).unsqueeze(0)
-                return self.Q(state_tensor).squeeze(0).cpu().numpy()  
+                return torch.argmax(self.Q(state_tensor)).item()  # Return index of best action
 
     def set_epsilon(self, epsilon):
         self.epsilon = epsilon
 
 def compute_q_vals(Q, states, actions):
     q_values = Q(states)
-    return q_values.gather(1, actions)
+    return q_values.gather(1, actions)  # Select Q-values corresponding to actions
 
 def compute_targets(Q, rewards, next_states, dones, discount_factor):
+    next_q_values = Q(next_states).detach().max(1, keepdim=True)[0]  # Max Q-value for next state
+    targets = rewards + (1 - dones.float()) * discount_factor * next_q_values
+    return targets
 
-    next_actions = Q(next_states).detach() 
-    rewards = rewards.expand_as(next_actions) 
-    dones = dones.float()
-    targets = rewards + (1 - dones) * discount_factor * next_actions
-
-    return targets  
 
 def train(Q, memory, optimizer, batch_size, discount_factor):
     if len(memory) < batch_size:
@@ -86,21 +90,23 @@ def train(Q, memory, optimizer, batch_size, discount_factor):
     states, actions, rewards, next_states, dones = zip(*transitions)
 
     states = torch.tensor(states, dtype=torch.float32)
-    actions = torch.tensor(np.array(actions), dtype=torch.float32)  
+    actions = torch.tensor(actions, dtype=torch.long).unsqueeze(1)  # Indices
     rewards = torch.tensor(rewards, dtype=torch.float32).unsqueeze(1)
     next_states = torch.tensor(next_states, dtype=torch.float32)
     dones = torch.tensor(dones, dtype=torch.bool).unsqueeze(1)
 
-    predicted_actions = Q(states)  
-    targets = compute_targets(Q, rewards, next_states, dones, discount_factor)
+    q_values = Q(states).gather(1, actions)  # Q-values of chosen actions
+    next_q_values = Q(next_states).max(1, keepdim=True)[0]  # Max Q-value of next state
+    targets = rewards + (1 - dones.float()) * discount_factor * next_q_values
 
-    loss = F.mse_loss(predicted_actions, targets)
+    loss = F.mse_loss(q_values, targets)
 
     optimizer.zero_grad()
     loss.backward()
     optimizer.step()
 
     return loss.item()
+
 
 def check_collision(state_readings): 
     coll_FrontLL = state_readings[0] > 1  
@@ -128,7 +134,8 @@ def scale_and_return_ordered(scaler, irs):
     return front_sensors, back_sensors
 
 def move_robobo_and_calc_reward(scaler, action, rob, state):
-    left_speed, right_speed = action  
+    left_speed, right_speed, duration = action
+    rob.move_blocking(left_speed, right_speed, duration)
     movement = [left_speed, right_speed, 250]
     rob.move_blocking(*movement)
 
@@ -173,7 +180,7 @@ def run_qlearning_classification(rob: IRobobo):
     max_steps = 75
     current_date = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     final_explore_rate = .05
-    num_rounds_till_plateau = 5000
+    num_rounds_till_plateau = 500
     run_name = f"{current_date}_hidden{num_hidden}_lr{learning_rate}_gamma{discount_factor}_bs{batch_size}_mem{memory_capacity}_eps{episodes}_steps{max_steps}_epsil{final_explore_rate}_rounds_of_exp{num_rounds_till_plateau}"
 
     wandb.init(
@@ -219,12 +226,15 @@ def run_qlearning_classification(rob: IRobobo):
         for step in range(max_steps):
             eps = get_epsilon(step, num_rounds_till_plateau)
             policy.set_epsilon(eps)
-            action = policy.sample_action(state)
+            # Get action index
+            action_index = policy.sample_action(state)
+            action = discrete_actions[action_index]  # Map index to actual action
+
 
             log_entry, collision, next_state = move_robobo_and_calc_reward(scaler, action, rob, state)
             done = collision or (step == max_steps - 1)
 
-            memory.push((state, action, log_entry['move_reward'], next_state, done))
+            memory.push((state, action_index, log_entry['move_reward'], next_state, done))
             loss = train(Q, memory, optimizer, batch_size, discount_factor)
 
 
