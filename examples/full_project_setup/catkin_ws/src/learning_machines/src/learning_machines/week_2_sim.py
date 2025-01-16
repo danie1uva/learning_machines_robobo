@@ -195,15 +195,16 @@ def run_ppo_training(rob: SimulationRobobo):
         rob.set_position(initial_position, initial_orientation)
 
         states, actions, rewards, log_probs, dones, values = [], [], [], [], [], []
-
         state = preprocess_state(scaler, rob)
         done = False
+
+        total_reward = 0  # Track the total reward for the episode
 
         for t in range(MAX_STEPS):
             mean, std = policy_net(torch.tensor(state, dtype=torch.float32).unsqueeze(0))
             exploration_factor = max(0.1, 1.0 - episode / EPISODES)  # Reduce exploration over episodes
             scaled_std = std * exploration_factor
-            
+
             dist = torch.distributions.MultivariateNormal(mean, torch.diag_embed(scaled_std))
             action = dist.sample()
             log_prob = dist.log_prob(action)
@@ -227,17 +228,23 @@ def run_ppo_training(rob: SimulationRobobo):
             dones.append(done)
             values.append(value_net(torch.tensor(state, dtype=torch.float32).unsqueeze(0)).item())
 
+            total_reward += reward  # Accumulate reward
+
             state = next_state
 
             if collision:
                 done = True
                 break
 
+        # Log the total reward for the episode
+        print(f"Total reward for episode {episode}: {total_reward}")
+        wandb.log({"episode": episode, "total_reward": total_reward})
+
         values.append(0 if done else value_net(torch.tensor(state, dtype=torch.float32).unsqueeze(0)).item())
         advantages = compute_advantages(rewards, values, dones)
 
         ppo_update(policy_net, value_net, optimizer_policy, optimizer_value,
-                   states, actions, log_probs, rewards, advantages)
+                states, actions, log_probs, rewards, advantages)
 
         print(f"Episode {episode} completed")
         rob.stop_simulation()
