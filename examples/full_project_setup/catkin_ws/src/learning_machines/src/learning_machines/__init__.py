@@ -9,15 +9,20 @@ from .week_1_hardware_demo import (
 
 from .week_2_sim import (
     irs_positions,
-    train_model,
-    test_model,
+    compute_reward,
+    check_collision,
+    preprocess_state,
+    compute_advantages,
+    ppo_update,
+    run_ppo_training,  # Ensure this is defined in week_2_sim.py
 )
 
-__all__ = (
-    "run_all_actions",
-    "test_irs",
-    "stop_at_obstacle",
+__all__ = [
     "irs_positions",
-    "train_model",
-    "test_model",
-)
+    "compute_reward",
+    "check_collision",
+    "preprocess_state",
+    "compute_advantages",
+    "ppo_update",
+    "run_ppo_training",
+]

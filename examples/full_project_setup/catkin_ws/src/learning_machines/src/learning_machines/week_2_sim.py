@@ -1,22 +1,16 @@
+import os
+import torch
+import torch.nn as nn
+import torch.optim as optim
 import numpy as np
-import gym
-import cv2
-from stable_baselines3 import PPO
-from stable_baselines3.common.vec_env import DummyVecEnv
-from stable_baselines3.common.callbacks import EvalCallback
-from robobo_interface import (
-    IRobobo,  # Add this to import IRobobo
-    SimulationRobobo,
-    Emotion,
-    LedId,
-    LedColor,
-    SoundEmotion,
-)
-from robobo_interface.datatypes import Position, Orientation  # Import required data types
+from sklearn.preprocessing import PowerTransformer
+import joblib
+from robobo_interface import SimulationRobobo
+from robobo_interface.datatypes import Position, Orientation
+from datetime import datetime
+import wandb
 
-from data_files import FIGURES_DIR, READINGS_DIR
-
-# IRS sensor indices
+# week_2_sim.py
 irs_positions = {
     "BackL": 0,
     "BackR": 1,
@@ -28,140 +22,195 @@ irs_positions = {
     "FrontLL": 7,
 }
 
-class ObstacleAvoidanceEnv(gym.Env):
-    """Custom Gym Environment for Robobo obstacle avoidance."""
-    def __init__(self):
-        super(ObstacleAvoidanceEnv, self).__init__()
-        self.robot = SimulationRobobo()
-        self.default_time_step = 0.05  # Match the time step from the CoppeliaSim scene
 
-        # Initialize the simulation
-        self._initialize_simulation()
+# PPO Hyperparameters
+LEARNING_RATE = 0.0003
+GAMMA = 0.99
+LAMBDA = 0.95
+EPSILON_CLIP = 0.2
+ENTROPY_BETA = 0.01
+EPISODES = 500  # Reduced for testing
+MAX_STEPS = 75
+BATCH_SIZE = 64
+N_EPOCHS = 4
 
-        # Define action and observation space
-        self.action_space = gym.spaces.Box(low=-100, high=100, shape=(2,), dtype=np.float32)  # Wheel speeds
-        self.observation_space = gym.spaces.Box(low=0, high=1, shape=(8,), dtype=np.float32)  # IRS sensors
+# Ensure scaler exists or create one
+SCALER_PATH = 'software_powertrans_scaler.gz'
 
-    def _initialize_simulation(self):
-        """Initialize the simulation environment with default settings."""
-        self.robot.stop_simulation()
+if not os.path.exists(SCALER_PATH):
+    print("Scaler not found. Generating a new scaler.")
+    simulated_irs_data = np.random.rand(1000, 8) * 10
+    scaler = PowerTransformer()
+    scaler.fit(simulated_irs_data)
+    joblib.dump(scaler, SCALER_PATH)
+    print(f"Scaler saved to {SCALER_PATH}")
+else:
+    print(f"Loading existing scaler from {SCALER_PATH}")
+    scaler = joblib.load(SCALER_PATH)
 
-        # Set simulation time step
-        self.robot._sim.setFloatParam(self.robot._sim.floatparam_simulation_time_step, self.default_time_step)
-        
-        # Set the dynamics engine (1 for Bullet)
-        self.robot._sim.setInt32Param(self.robot._sim.intparam_dynamic_engine, 1)
+# Networks
+class PPOPolicyNetwork(nn.Module):
+    def __init__(self, input_dim, output_dim):
+        super(PPOPolicyNetwork, self).__init__()
+        self.fc1 = nn.Linear(input_dim, 128)
+        self.fc2 = nn.Linear(128, 64)
+        self.fc3_mean = nn.Linear(64, output_dim)
+        self.fc3_std = nn.Linear(64, output_dim)
 
-        # Log simulation parameters for debugging
-        current_time_step = self.robot._sim.getFloatParam(self.robot._sim.floatparam_simulation_time_step)
-        dynamics_engine = self.robot._sim.getInt32Param(self.robot._sim.intparam_dynamic_engine)
-        print(f"Simulation time step: {current_time_step}")
-        print(f"Dynamics engine: {dynamics_engine}")
+    def forward(self, x):
+        x = torch.relu(self.fc1(x))
+        x = torch.relu(self.fc2(x))
+        mean = torch.tanh(self.fc3_mean(x)) * 100
+        std = torch.exp(self.fc3_std(x).clamp(-2, 2))
+        return mean, std
 
-        # Start the simulation
-        self.robot.play_simulation()
+class PPOValueNetwork(nn.Module):
+    def __init__(self, input_dim):
+        super(PPOValueNetwork, self).__init__()
+        self.fc1 = nn.Linear(input_dim, 128)
+        self.fc2 = nn.Linear(128, 64)
+        self.fc3 = nn.Linear(64, 1)
 
+    def forward(self, x):
+        x = torch.relu(self.fc1(x))
+        x = torch.relu(self.fc2(x))
+        return self.fc3(x)
 
-    def reset(self):
-        """Reset the environment."""
-        self.robot.stop_simulation()
-        self._initialize_simulation()
+# Reward Function
+def compute_reward(next_state, action):
+    action = np.squeeze(action)  # Remove unnecessary dimensions
+    if action.size == 2:  # Two elements
+        forward_motion = (action[0] + action[1]) / 200
+    elif action.size == 1:  # One element
+        forward_motion = action[0] / 200
+    else:
+        raise ValueError(f"Unexpected action size: {action.size}")
+    return forward_motion
 
-        # Reset the robot's position and orientation
-        self.robot.set_position(
-            position=Position(x=0, y=0, z=0),
-            orientation=Orientation(yaw=0, pitch=0, roll=0),
-        )
-        return self._get_observation()
+# Collision Check
+def check_collision(state):
+    return any(s > 0.8 for s in state[:8])
 
-    def step(self, action):
-        """Take an action, compute reward, and return next state."""
-        left_speed, right_speed = action
-        self.robot.move_blocking(int(left_speed), int(right_speed), 500)  # Move for 500ms
+# State Preprocessing
+def preprocess_state(scaler, rob):
+    irs = rob.read_irs()
+    irs_scaled = scaler.transform([irs])[0].tolist()
+    front_sensors = [irs_scaled[7], irs_scaled[2], irs_scaled[4], irs_scaled[3], irs_scaled[5]]
+    back_sensors = [irs_scaled[0], irs_scaled[6], irs_scaled[1]]
+    return np.array(front_sensors + back_sensors, dtype=np.float32)
 
-        obs = self._get_observation()
-        collision = self._detect_collision(obs)
-        reward = self._calculate_reward(obs, action, collision)
+# Advantage Estimation
+def compute_advantages(rewards, values, dones):
+    advantages = []
+    gae = 0
+    for i in reversed(range(len(rewards))):
+        delta = rewards[i] + GAMMA * values[i + 1] * (1 - dones[i]) - values[i]
+        gae = delta + GAMMA * LAMBDA * (1 - dones[i]) * gae
+        advantages.insert(0, gae)
+    return advantages
 
-        if collision:
-            # Reverse or turn based on which sensor detected the collision
-            self._avoid_obstacle(obs)
+# PPO Update
+def ppo_update(policy_net, value_net, optimizer_policy, optimizer_value, 
+               states, actions, log_probs, rewards, advantages):
+    states = torch.tensor(np.array(states), dtype=torch.float32)
+    actions = torch.tensor(np.array(actions), dtype=torch.float32)
+    log_probs = torch.tensor(np.array(log_probs), dtype=torch.float32)
+    rewards = torch.tensor(np.array(rewards), dtype=torch.float32).unsqueeze(-1)  # Add dimension
+    advantages = torch.tensor(np.array(advantages), dtype=torch.float32).unsqueeze(-1)  # Add dimension
 
-        done = False  # Episode doesn't terminate automatically
-        return obs, reward, done, {}
+    for _ in range(N_EPOCHS):
+        for i in range(0, len(states), BATCH_SIZE):
+            idx = slice(i, i + BATCH_SIZE)
+            s = states[idx]
+            a = actions[idx]
+            lp = log_probs[idx]
+            adv = advantages[idx]
+            r = rewards[idx]
 
-    def _get_observation(self):
-        """Get normalized IRS sensor readings."""
-        irs = self.robot.read_irs()
-        normalized_irs = np.clip(np.array(irs) / 1000.0, 0, 1)
-        return normalized_irs
+            mean, std = policy_net(s)
+            dist = torch.distributions.MultivariateNormal(mean, torch.diag_embed(std))
+            new_log_probs = dist.log_prob(a)
+            entropy = dist.entropy().mean()
 
-    def _detect_collision(self, obs):
-        """Detect if any sensor exceeds the collision threshold."""
-        front_collision = obs[irs_positions["FrontC"]] > self.collision_threshold / 1000.0
-        back_collision = obs[irs_positions["BackC"]] > self.collision_threshold / 1000.0
-        return front_collision or back_collision
+            ratios = torch.exp(new_log_probs - lp)
+            surrogate1 = ratios * adv
+            surrogate2 = torch.clamp(ratios, 1 - EPSILON_CLIP, 1 + EPSILON_CLIP) * adv
 
-    def _avoid_obstacle(self, obs):
-        """Take action to avoid the obstacle based on sensor readings."""
-        if obs[irs_positions["FrontC"]] > self.collision_threshold / 1000.0:
-            # Detected obstacle in the front, reverse
-            self.robot.move_blocking(-20, -20, self.reverse_duration)
-        elif obs[irs_positions["BackC"]] > self.collision_threshold / 1000.0:
-            # Detected obstacle in the back, move forward
-            self.robot.move_blocking(20, 20, self.reverse_duration)
+            policy_loss = -torch.min(surrogate1, surrogate2).mean() - ENTROPY_BETA * entropy
+            value_loss = nn.MSELoss()(value_net(s), r)
 
-    def _calculate_reward(self, obs, action, collision):
-        """Reward function to encourage obstacle avoidance."""
-        if collision:
-            return -10  # Large penalty for collisions
+            optimizer_policy.zero_grad()
+            policy_loss.backward()
+            optimizer_policy.step()
 
-        forward_motion = (action[0] + action[1]) / 200  # Average speed (normalized)
-        proximity_penalty = np.mean(obs[irs_positions["FrontL"]:irs_positions["FrontRR"] + 1])  # Penalty for proximity to obstacles
+            optimizer_value.zero_grad()
+            value_loss.backward()
+            optimizer_value.step()
 
-        reward = forward_motion - proximity_penalty
-        return reward
+# PPO Training Loop
+def run_ppo_training(rob: SimulationRobobo):
+    obs_dim = 8  # 8 IRS sensors
+    act_dim = 2  # Left and right wheel speeds
 
-    def render(self, mode="human"):
-        """Render environment (not implemented)."""
-        pass
+    policy_net = PPOPolicyNetwork(obs_dim, act_dim)
+    value_net = PPOValueNetwork(obs_dim)
+    optimizer_policy = optim.Adam(policy_net.parameters(), lr=LEARNING_RATE)
+    optimizer_value = optim.Adam(value_net.parameters(), lr=LEARNING_RATE)
 
-    def close(self):
-        """Stop simulation."""
-        self.robot.stop_simulation()
+    wandb.init(project="learning_machines", config={"episodes": EPISODES, "max_steps": MAX_STEPS})
 
+    for episode in range(EPISODES):
+        rob.play_simulation()
+        rob.set_position(Position(0, 0, 0), Orientation(0, 0, 0))
 
-# Training the PPO model
-def train_model():
-    env = DummyVecEnv([lambda: ObstacleAvoidanceEnv()])
-    model = PPO("MlpPolicy", env, verbose=1)
-    model.learn(total_timesteps=10000)
-    model.save(str(READINGS_DIR / "ppo_obstacle_avoidance"))
-    print("Model trained and saved!")
+        states, actions, rewards, log_probs, dones, values = [], [], [], [], [], []
 
-# Testing the trained model
-def test_model():
-    model = PPO.load(str(READINGS_DIR / "ppo_obstacle_avoidance"))
-    env = ObstacleAvoidanceEnv()
-    obs = env.reset()
-
-    for _ in range(10):
+        state = preprocess_state(scaler, rob)
         done = False
-        while not done:
-            action, _ = model.predict(obs)
-            obs, reward, done, _ = env.step(action)
-            print(f"Reward: {reward}, Observation: {obs}")
-        obs = env.reset()
 
-def test_sensors(rob: IRobobo):
-    print("IRS data: ", rob.read_irs())
-    image = rob.read_image_front()
-    cv2.imwrite(str(FIGURES_DIR / "photo.png"), image)
-    print("Phone pan: ", rob.read_phone_pan())
-    print("Phone tilt: ", rob.read_phone_tilt())
-    print("Current acceleration: ", rob.read_accel())
-    print("Current orientation: ", rob.read_orientation())
+        for t in range(MAX_STEPS):
+            mean, std = policy_net(torch.tensor(state, dtype=torch.float32).unsqueeze(0))
+            dist = torch.distributions.MultivariateNormal(mean, torch.diag_embed(std))
+            action = dist.sample()
+            log_prob = dist.log_prob(action)
 
-if __name__ == "__main__":
-    train_model()  # Uncomment to train
-    # test_model()  # Uncomment to test
+            if action.ndim == 1:  # 1D tensor
+                left_speed, right_speed = map(int, action.tolist())  # Convert directly to list
+            elif action.ndim == 2:  # 2D tensor
+                left_speed, right_speed = map(int, action[0].tolist())  # Access first row
+            else:
+                raise ValueError(f"Unexpected action shape: {action.shape}")
+
+
+
+            rob.move_blocking(left_speed, right_speed, 500)
+
+            next_state = preprocess_state(scaler, rob)
+            reward = compute_reward(next_state, action.squeeze().detach().numpy())
+
+            states.append(state)
+            actions.append(action.detach().numpy())
+            rewards.append(reward)
+            log_probs.append(log_prob.item())
+            dones.append(done)
+            values.append(value_net(torch.tensor(state, dtype=torch.float32).unsqueeze(0)).item())
+
+            state = next_state
+
+            if check_collision(next_state):
+                done = True
+                break
+
+        values.append(0 if done else value_net(torch.tensor(state, dtype=torch.float32).unsqueeze(0)).item())
+        advantages = compute_advantages(rewards, values, dones)
+
+        ppo_update(policy_net, value_net, optimizer_policy, optimizer_value, 
+                   states, actions, log_probs, rewards, advantages)
+
+        print(f"Episode {episode} completed")
+        rob.stop_simulation()
+
+    torch.save(policy_net.state_dict(), "ppo_policy.pth")
+    torch.save(value_net.state_dict(), "ppo_value.pth")
+    print("Training complete!")
+
