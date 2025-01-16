@@ -78,10 +78,18 @@ visited_states = set()
 def compute_reward(next_state, action, collision):
     global visited_states
     left_speed, right_speed = action
+
+    # Compute movement magnitude
+    movement_magnitude = abs(left_speed) + abs(right_speed)
+
+    # Base rewards
     movement_reward = 50
-    speed_reward = (abs(left_speed) + abs(right_speed)) / 2
+    speed_reward = movement_magnitude / 2
     smoothness_reward = -abs(left_speed - right_speed)
     collision_penalty = -500 if collision else 0
+
+    # Penalize very small movements
+    small_movement_penalty = -50 if movement_magnitude < 20 else 0  # Adjust threshold as needed
 
     # Reward for exploring new states
     state_hash = tuple(next_state.round(2))  # Hash state with reduced precision
@@ -93,12 +101,14 @@ def compute_reward(next_state, action, collision):
         2 * speed_reward +
         0.5 * smoothness_reward +
         collision_penalty +
-        exploration_reward
+        exploration_reward +
+        small_movement_penalty
     )
     print(f"Reward components: Movement: {movement_reward}, Speed: {speed_reward}, "
           f"Smoothness: {smoothness_reward}, Collision Penalty: {collision_penalty}, "
-          f"Exploration Reward: {exploration_reward}, Total: {reward}")
+          f"Exploration Reward: {exploration_reward}, Small Movement Penalty: {small_movement_penalty}, Total: {reward}")
     return reward
+
 
 
 def check_collision(state):
@@ -214,6 +224,9 @@ def run_ppo_training(rob: SimulationRobobo):
             # Clip actions to ensure smooth movement
             left_speed = max(min(left_speed, 100), -100)
             right_speed = max(min(right_speed, 100), -100)
+            if abs(left_speed) + abs(right_speed) < 20:  # Minimum movement threshold
+                left_speed = np.sign(left_speed) * 20
+                right_speed = np.sign(right_speed) * 20
 
             rob.move_blocking(left_speed, right_speed, 250)
 
