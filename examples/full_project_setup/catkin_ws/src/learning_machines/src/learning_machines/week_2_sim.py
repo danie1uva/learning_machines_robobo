@@ -33,27 +33,34 @@ class ObstacleAvoidanceEnv(gym.Env):
     def __init__(self):
         super(ObstacleAvoidanceEnv, self).__init__()
         self.robot = SimulationRobobo()
+        self.default_time_step = 0.05  # Match the time step from the CoppeliaSim scene
 
-        # Reset and initialize the simulation
+        # Initialize the simulation
         self._initialize_simulation()
 
         # Define action and observation space
         self.action_space = gym.spaces.Box(low=-100, high=100, shape=(2,), dtype=np.float32)  # Wheel speeds
         self.observation_space = gym.spaces.Box(low=0, high=1, shape=(8,), dtype=np.float32)  # IRS sensors
 
-        # Obstacle detection settings
-        self.collision_threshold = 200  # Threshold for obstacle detection
-        self.reverse_duration = 500    # Duration to reverse or turn (ms)
-
     def _initialize_simulation(self):
-        """Initialize the simulation environment with proper settings."""
+        """Initialize the simulation environment with default settings."""
         self.robot.stop_simulation()
+
+        # Set simulation time step
+        self.robot._sim.setFloatParam(self.robot._sim.floatparam_simulation_time_step, self.default_time_step)
+        
+        # Set the dynamics engine (1 for Bullet)
+        self.robot._sim.setInt32Param(self.robot._sim.intparam_dynamic_engine, 1)
+
+        # Log simulation parameters for debugging
+        current_time_step = self.robot._sim.getFloatParam(self.robot._sim.floatparam_simulation_time_step)
+        dynamics_engine = self.robot._sim.getInt32Param(self.robot._sim.intparam_dynamic_engine)
+        print(f"Simulation time step: {current_time_step}")
+        print(f"Dynamics engine: {dynamics_engine}")
+
+        # Start the simulation
         self.robot.play_simulation()
 
-        # Set default simulation parameters
-        self.robot._sim.setInt32Param(self.robot._sim.intparam_dynamic_engine, 1)  # Use Bullet engine
-        self.robot._sim.setFloatParam(self.robot._sim.floatparam_simulation_time_step, 0.05)  # 50ms time step
-        print("Simulation initialized with default dynamics engine and time step.")
 
     def reset(self):
         """Reset the environment."""
