@@ -2,7 +2,7 @@
 import sys
 
 from robobo_interface import SimulationRobobo, HardwareRobobo
-from learning_machines import run_all_actions, test_irs, stop_at_obstacle
+from learning_machines import run_all_actions, test_irs, stop_at_obstacle, run_qlearning_classification
 
 
 if __name__ == "__main__":
@@ -15,10 +15,10 @@ if __name__ == "__main__":
     elif sys.argv[1] == "--hardware":
         rob = HardwareRobobo(camera=True)
     elif sys.argv[1] == "--simulation":
-        rob = SimulationRobobo()
-        rob = SimulationRobobo(identifier = 0) 
+        rob = SimulationRobobo(identifier = 1) 
     else:
         raise ValueError(f"{sys.argv[1]} is not a valid argument.")
     
-    stop_at_obstacle(rob, 'FrontC')
-    stop_at_obstacle(rob, 'BackC')
+    # test_irs(rob) # this is to pause the robot, hopefully makes sensors read from start of obstacle movement
+    # test_irs(rob)
+    run_qlearning_classification(rob) 
