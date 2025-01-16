@@ -10,6 +10,9 @@ from robobo_interface.datatypes import Position, Orientation
 from datetime import datetime
 import wandb
 import time
+import sys
+sys.setrecursionlimit(1000000)  # Default is typically 1000
+
 
 # week_2_sim.py
 irs_positions = {
