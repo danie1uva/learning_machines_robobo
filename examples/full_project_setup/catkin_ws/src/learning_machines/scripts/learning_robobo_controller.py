@@ -16,6 +16,7 @@ if __name__ == "__main__":
         rob = HardwareRobobo(camera=True)
     elif sys.argv[1] == "--simulation":
         rob = SimulationRobobo()
+        rob = SimulationRobobo(identifier = 0) 
     else:
         raise ValueError(f"{sys.argv[1]} is not a valid argument.")
     

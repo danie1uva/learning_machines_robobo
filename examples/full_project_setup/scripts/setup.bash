@@ -10,3 +10,4 @@ export ROS_MASTER_URI="http://172.20.10.2:11311"
 # macOS:
 #    ipconfig getifaddr en1
 export COPPELIA_SIM_IP="172.20.10.3"
+export COPPELIA_SIM_IP="145.109.41.49"
