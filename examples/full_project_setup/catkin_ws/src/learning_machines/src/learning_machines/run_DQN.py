@@ -8,7 +8,7 @@ import joblib
 import os
 import time
 import pickle
-from data_files import FIGURES_DIR, READINGS_DIR, RESULTS_DIR
+from data_files import FIGURES_DIR, RESULTS_DIR
 
 from robobo_interface import (
     IRobobo,
@@ -125,7 +125,7 @@ def move_robobo_and_calc_reward(scaler, action, rob, state):
 
     max_sensor_reading = max(state)
     collision = max_sensor_reading > 0.9
-    collision_penalty = -50 if collision else 0
+    collision_penalty = -100 if collision else 0
 
     if left_speed > 0 and right_speed > 0:
         forward_reward = 5 * min(left_speed, right_speed) / 10  # Encourage forward 
@@ -153,16 +153,9 @@ def move_robobo_and_calc_reward(scaler, action, rob, state):
 def run_qlearning_classification(rob: IRobobo):
     print('connected')
 
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    #Results directory, logging
-    log_dir = RESULTS_DIR / "week2" / "logs" #check if this is the right path
-    os.makedirs(log_dir, exist_ok=True)
-    model_dir = RESULTS_DIR / "week2" / "models"
-    logs_path = os.path.join(log_dir, f"training_logs_{timestamp}.pkl")
-
     num_hidden = 128
     learning_rate = 0.001
-    discount_factor = 0.9
+    discount_factor = 1 #no target so no discount factor needed
     batch_size = 32
     memory_capacity = 10000
 
@@ -172,6 +165,28 @@ def run_qlearning_classification(rob: IRobobo):
     policy = EpsilonGreedyPolicy(Q, epsilon=0.05)  # Set epsilon to 0.05 for reduced exploration
 
     scaler = joblib.load('software_powertrans_scaler.gz')
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    #Results directory, logging
+    log_dir = RESULTS_DIR / "week2" / "logs" #check if this is the right path
+    os.makedirs(log_dir, exist_ok=True)
+    model_dir = RESULTS_DIR / "week2" / "models"
+    os.makedirs(model_dir, exist_ok=True)
+    memory_dir = RESULTS_DIR / "week2" / "memory"
+    os.makedirs(memory_dir, exist_ok=True)
+    # logs_path = os.path.join(log_dir, f"training_logs_{timestamp}.pkl")
+
+    # Load previous model and memory
+    model_path = os.path.join(model_dir,"trained_qnetwork_latest.pth")
+    memory_path = os.path.join(memory_dir,"replay_memory_latest.pkl")
+    if os.path.exists(model_path):
+        Q.load_state_dict(torch.load(model_path))
+        print(f"Loaded Q-network from {model_path}")
+    if os.path.exists(memory_path):
+        with open(memory_path, "rb") as f:
+            memory = pickle.load(f)
+        print(f"Loaded replay memory from {memory_path}")
+
     rob.play_simulation()
 
     # Track progress
@@ -179,7 +194,7 @@ def run_qlearning_classification(rob: IRobobo):
     round_rewards = []
     reward_logs = []
 
-    for round in range(10): 
+    for round in range(100): 
         print(f"Round: {round}")
         rob.play_simulation()
         state = get_current_state(scaler, rob.read_irs())
@@ -214,25 +229,45 @@ def run_qlearning_classification(rob: IRobobo):
         print(f"Round {round}: Total Reward = {total_reward}")
         rob.stop_simulation()
         time.sleep(.5)
+
     
-    #use pickle to log
+    
+    # Save logs
     logs = {
         "loss_log": loss_log,
         "round_rewards": round_rewards,
         "reward_logs": reward_logs
     }
+    logs_path = os.path.join(log_dir,"training_logs.pkl")
     with open(logs_path, "wb") as f:
         pickle.dump(logs, f)
+    print("Training logs saved.")
 
-    
-    model_path = os.path.join(model_dir,f"trained_qnetwork_{timestamp}.pth")
-    # logs_path = f"training_logs_{timestamp}.npz"
-
+    # Save Q-network and replay memory
     torch.save(Q.state_dict(), model_path)
-    print(f"Model saved to {model_path}")
+    with open(memory_path, "wb") as f:
+        pickle.dump(memory, f)
+    print(f"Model and replay memory saved.")
 
-    #logs_path = "training_logs.npz"
-    #np.savez(logs_path, loss_log=loss_log, round_rewards=round_rewards, reward_logs=reward_logs)
+    # #use pickle to log
+    # logs = {
+    #     "loss_log": loss_log,
+    #     "round_rewards": round_rewards,
+    #     "reward_logs": reward_logs
+    # }
+    # with open(logs_path, "wb") as f:
+    #     pickle.dump(logs, f)
+
+    
+    # model_path = os.path.join(model_dir,f"trained_qnetwork_{timestamp}.pth")
+    # # logs_path = f"training_logs_{timestamp}.npz"
+
+    # torch.save(Q.state_dict(), model_path)
+    # print(f"Model saved to {model_path}")
+
+    # #logs_path = "training_logs.npz"
+    # #np.savez(logs_path, loss_log=loss_log, round_rewards=round_rewards, reward_logs=reward_logs)
     
 
-    print(f"Training logs saved to {logs_path}")
+    # print(f"Training logs saved to {logs_path}")
+    
