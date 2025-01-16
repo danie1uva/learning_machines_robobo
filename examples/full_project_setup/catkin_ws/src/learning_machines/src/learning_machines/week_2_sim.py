@@ -2,11 +2,19 @@ import numpy as np
 import gym
 import cv2
 from stable_baselines3 import PPO
-from stable_baselines3.common.envs import DummyVecEnv
+from stable_baselines3.common.vec_env import DummyVecEnv
 from stable_baselines3.common.callbacks import EvalCallback
+from robobo_interface import (
+    IRobobo,  # Add this to import IRobobo
+    SimulationRobobo,
+    Emotion,
+    LedId,
+    LedColor,
+    SoundEmotion,
+)
+from robobo_interface.datatypes import Position, Orientation  # Import required data types
 
 from data_files import FIGURES_DIR, READINGS_DIR
-from robobo_interface import SimulationRobobo
 
 # IRS sensor indices
 irs_positions = {
@@ -25,17 +33,38 @@ class ObstacleAvoidanceEnv(gym.Env):
     def __init__(self):
         super(ObstacleAvoidanceEnv, self).__init__()
         self.robot = SimulationRobobo()
-        self.robot.play_simulation()
+
+        # Reset and initialize the simulation
+        self._initialize_simulation()
 
         # Define action and observation space
         self.action_space = gym.spaces.Box(low=-100, high=100, shape=(2,), dtype=np.float32)  # Wheel speeds
         self.observation_space = gym.spaces.Box(low=0, high=1, shape=(8,), dtype=np.float32)  # IRS sensors
 
+        # Obstacle detection settings
+        self.collision_threshold = 200  # Threshold for obstacle detection
+        self.reverse_duration = 500    # Duration to reverse or turn (ms)
+
+    def _initialize_simulation(self):
+        """Initialize the simulation environment with proper settings."""
+        self.robot.stop_simulation()
+        self.robot.play_simulation()
+
+        # Set default simulation parameters
+        self.robot._sim.setInt32Param(self.robot._sim.intparam_dynamic_engine, 1)  # Use Bullet engine
+        self.robot._sim.setFloatParam(self.robot._sim.floatparam_simulation_time_step, 0.05)  # 50ms time step
+        print("Simulation initialized with default dynamics engine and time step.")
+
     def reset(self):
         """Reset the environment."""
         self.robot.stop_simulation()
-        self.robot.play_simulation()
-        self.robot.set_position(position=(0, 0, 0), orientation=(0, 0, 0))
+        self._initialize_simulation()
+
+        # Reset the robot's position and orientation
+        self.robot.set_position(
+            position=Position(x=0, y=0, z=0),
+            orientation=Orientation(yaw=0, pitch=0, roll=0),
+        )
         return self._get_observation()
 
     def step(self, action):
@@ -44,8 +73,14 @@ class ObstacleAvoidanceEnv(gym.Env):
         self.robot.move_blocking(int(left_speed), int(right_speed), 500)  # Move for 500ms
 
         obs = self._get_observation()
-        reward = self._calculate_reward(obs, action)
-        done = False  # The episode never "ends" automatically
+        collision = self._detect_collision(obs)
+        reward = self._calculate_reward(obs, action, collision)
+
+        if collision:
+            # Reverse or turn based on which sensor detected the collision
+            self._avoid_obstacle(obs)
+
+        done = False  # Episode doesn't terminate automatically
         return obs, reward, done, {}
 
     def _get_observation(self):
@@ -54,13 +89,30 @@ class ObstacleAvoidanceEnv(gym.Env):
         normalized_irs = np.clip(np.array(irs) / 1000.0, 0, 1)
         return normalized_irs
 
-    def _calculate_reward(self, obs, action):
-        """Reward function to encourage forward motion and avoid obstacles."""
-        forward_motion = (action[0] + action[1]) / 200  # Average speed (normalized)
-        proximity_penalty = np.mean(obs[irs_positions["FrontL"]:irs_positions["FrontRR"] + 1])
-        collision_penalty = 0 if all(o < 0.8 for o in obs) else -1  # Harsh penalty for near collisions
+    def _detect_collision(self, obs):
+        """Detect if any sensor exceeds the collision threshold."""
+        front_collision = obs[irs_positions["FrontC"]] > self.collision_threshold / 1000.0
+        back_collision = obs[irs_positions["BackC"]] > self.collision_threshold / 1000.0
+        return front_collision or back_collision
 
-        reward = forward_motion - proximity_penalty + collision_penalty
+    def _avoid_obstacle(self, obs):
+        """Take action to avoid the obstacle based on sensor readings."""
+        if obs[irs_positions["FrontC"]] > self.collision_threshold / 1000.0:
+            # Detected obstacle in the front, reverse
+            self.robot.move_blocking(-20, -20, self.reverse_duration)
+        elif obs[irs_positions["BackC"]] > self.collision_threshold / 1000.0:
+            # Detected obstacle in the back, move forward
+            self.robot.move_blocking(20, 20, self.reverse_duration)
+
+    def _calculate_reward(self, obs, action, collision):
+        """Reward function to encourage obstacle avoidance."""
+        if collision:
+            return -10  # Large penalty for collisions
+
+        forward_motion = (action[0] + action[1]) / 200  # Average speed (normalized)
+        proximity_penalty = np.mean(obs[irs_positions["FrontL"]:irs_positions["FrontRR"] + 1])  # Penalty for proximity to obstacles
+
+        reward = forward_motion - proximity_penalty
         return reward
 
     def render(self, mode="human"):
@@ -70,6 +122,7 @@ class ObstacleAvoidanceEnv(gym.Env):
     def close(self):
         """Stop simulation."""
         self.robot.stop_simulation()
+
 
 # Training the PPO model
 def train_model():
@@ -92,6 +145,15 @@ def test_model():
             obs, reward, done, _ = env.step(action)
             print(f"Reward: {reward}, Observation: {obs}")
         obs = env.reset()
+
+def test_sensors(rob: IRobobo):
+    print("IRS data: ", rob.read_irs())
+    image = rob.read_image_front()
+    cv2.imwrite(str(FIGURES_DIR / "photo.png"), image)
+    print("Phone pan: ", rob.read_phone_pan())
+    print("Phone tilt: ", rob.read_phone_tilt())
+    print("Current acceleration: ", rob.read_accel())
+    print("Current orientation: ", rob.read_orientation())
 
 if __name__ == "__main__":
     train_model()  # Uncomment to train
