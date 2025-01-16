@@ -103,8 +103,8 @@ def train(Q, memory, optimizer, batch_size, discount_factor):
     return loss.item()
 
 def check_collision(state_readings): 
-    coll_FrontLL = state_readings[0] > 1.3  
-    coll_FrontL = state_readings[1] > .6
+    coll_FrontLL = state_readings[0] > 1  
+    coll_FrontL = state_readings[1] > .4
     coll_FrontC = state_readings[2] > 2.0
     coll_FrontR = state_readings[3] > .6
     coll_FrontRR = state_readings[4] > 1.1
