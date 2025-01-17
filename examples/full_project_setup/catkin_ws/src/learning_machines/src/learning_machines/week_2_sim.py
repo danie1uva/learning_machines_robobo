@@ -32,7 +32,7 @@ GAMMA = 0.99
 LAMBDA = 0.95
 EPSILON_CLIP = 0.1
 ENTROPY_BETA = 0.05
-EPISODES = 1000
+EPISODES = 500
 MAX_STEPS = 75
 BATCH_SIZE = 64
 N_EPOCHS = 4
@@ -56,6 +56,10 @@ class PPOPolicyNetwork(nn.Module):
         self.fc2 = nn.Linear(128, 64)
         self.fc3_mean = nn.Linear(64, output_dim)
         self.fc3_std = nn.Linear(64, output_dim)
+        
+        # Initialize biases for the mean output layer to encourage forward motion
+        # with torch.no_grad():
+        #     self.fc3_mean.bias.fill_(0.05)  # Favor forward movement with a slight bias
 
     def forward(self, x):
         x = torch.relu(self.fc1(x))
@@ -86,12 +90,12 @@ def compute_reward(next_state, action, collision):
 
     # Append the absolute difference between wheel speeds to the buffer
     circle_buffer.append(abs(left_speed - right_speed))
-    if len(circle_buffer) > 2:  # Keep the last 10 steps in the buffer
+    if len(circle_buffer) > 3:  # Keep the last 10 steps in the buffer
         circle_buffer.pop(0)
 
     # Detect repetitive circular motion
     consistent_circling = all(diff > 70 for diff in circle_buffer)
-    circle_penalty = -100 if consistent_circling else 0
+    circle_penalty = -300 if consistent_circling else 0
 
     # Compute other rewards and penalties
     movement_magnitude = abs(left_speed) + abs(right_speed)
@@ -99,7 +103,16 @@ def compute_reward(next_state, action, collision):
     speed_reward = movement_magnitude / 2
     smoothness_reward = -abs(left_speed - right_speed)
     collision_penalty = -500 if collision else 0
-    small_movement_penalty = -50 if movement_magnitude < 20 else 0
+    small_movement_penalty = -50 if movement_magnitude < 50 else 0
+
+    # Extra reward if both wheels have the same direction and a similar magnitude
+    if (left_speed > 0 and right_speed > 0) or (left_speed < 0 and right_speed < 0):
+        alignment_bonus = -abs(abs(left_speed) - abs(right_speed))
+        # This starts at 0 if they're exactly the same magnitude and
+        # goes negative the more different they are.
+        # Or you can do a positive reward for them being close to each other.
+    else:
+        alignment_bonus = -200 # penalty if wheels in opposite directions
 
     # Reward for exploring new states
     state_hash = tuple(next_state.round(2))
@@ -109,11 +122,12 @@ def compute_reward(next_state, action, collision):
     reward = (
         movement_reward +
         2 * speed_reward +
-        0.5 * smoothness_reward +
+        0.35 * smoothness_reward +
         collision_penalty +
         exploration_reward +
         small_movement_penalty +
-        circle_penalty
+        circle_penalty +
+        alignment_bonus
     )
 
     # Debug information
@@ -234,6 +248,26 @@ def run_ppo_training(rob: SimulationRobobo):
             log_prob = dist.log_prob(action)
 
             left_speed, right_speed = map(int, action.squeeze().tolist())
+            
+            # Determine if random action should override
+            # random_action_chance = 0.3 if episode < EPISODES * 0.2 else 0.0  # 30% chance for first 20% of episodes
+            # if np.random.rand() < random_action_chance:
+            #     # Use random actions
+            #     left_speed = np.random.randint(-100, 101)
+            #     right_speed = np.random.randint(-100, 101)
+            #     log_prob = None  # No log probability for random actions
+            #     print(f"Episode {episode}, Step {t}: Random action selected - Left: {left_speed}, Right: {right_speed}")
+            # else:
+            #     # Use policy for action selection
+            #     mean, std = policy_net(torch.tensor(state, dtype=torch.float32).unsqueeze(0))
+            #     exploration_factor = max(0.05, 1.0 - episode / (EPISODES * 0.5))  # Reduce exploration over episodes
+            #     scaled_std = std * exploration_factor
+
+            #     dist = torch.distributions.MultivariateNormal(mean, torch.diag_embed(scaled_std))
+            #     action = dist.sample()
+            #     log_prob = dist.log_prob(action)
+
+            #     left_speed, right_speed = map(int, action.squeeze().tolist())
 
             # Clip actions to ensure smooth movement
             left_speed = max(min(left_speed, 100), -100)
