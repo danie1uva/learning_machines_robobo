@@ -78,24 +78,31 @@ class PPOValueNetwork(nn.Module):
 
 visited_states = set()
 
+circle_buffer = []
+
 def compute_reward(next_state, action, collision):
-    global visited_states
+    global visited_states, circle_buffer
     left_speed, right_speed = action
 
-    # Compute movement magnitude
-    movement_magnitude = abs(left_speed) + abs(right_speed)
+    # Append the absolute difference between wheel speeds to the buffer
+    circle_buffer.append(abs(left_speed - right_speed))
+    if len(circle_buffer) > 10:  # Keep the last 10 steps in the buffer
+        circle_buffer.pop(0)
 
-    # Base rewards
+    # Detect repetitive circular motion
+    consistent_circling = all(diff > 80 for diff in circle_buffer)
+    circle_penalty = -100 if consistent_circling else 0
+
+    # Compute other rewards and penalties
+    movement_magnitude = abs(left_speed) + abs(right_speed)
     movement_reward = 50
     speed_reward = movement_magnitude / 2
     smoothness_reward = -abs(left_speed - right_speed)
     collision_penalty = -500 if collision else 0
-
-    # Penalize very small movements
-    small_movement_penalty = -50 if movement_magnitude < 20 else 0  # Adjust threshold as needed
+    small_movement_penalty = -50 if movement_magnitude < 20 else 0
 
     # Reward for exploring new states
-    state_hash = tuple(next_state.round(2))  # Hash state with reduced precision
+    state_hash = tuple(next_state.round(2))
     exploration_reward = 20 if state_hash not in visited_states else 0
     visited_states.add(state_hash)
 
@@ -105,12 +112,18 @@ def compute_reward(next_state, action, collision):
         0.5 * smoothness_reward +
         collision_penalty +
         exploration_reward +
-        small_movement_penalty
+        small_movement_penalty +
+        circle_penalty
     )
+
+    # Debug information
     print(f"Reward components: Movement: {movement_reward}, Speed: {speed_reward}, "
           f"Smoothness: {smoothness_reward}, Collision Penalty: {collision_penalty}, "
-          f"Exploration Reward: {exploration_reward}, Small Movement Penalty: {small_movement_penalty}, Total: {reward}")
+          f"Exploration Reward: {exploration_reward}, Small Movement Penalty: {small_movement_penalty}, "
+          f"Circle Penalty: {circle_penalty}, Total: {reward}")
     return reward
+
+
 
 
 
