@@ -3,7 +3,7 @@ import sys
 import torch 
 
 from robobo_interface import SimulationRobobo, HardwareRobobo
-from learning_machines import run_all_actions, test_irs, stop_at_obstacle, run_qlearning_classification, run_ppo, rob_move, QNetwork
+from learning_machines import run_all_actions, test_irs, stop_at_obstacle, run_qlearning_classification, run_ppo, rob_move, QNetwork, go_to_space
 
 
 if __name__ == "__main__":
@@ -26,5 +26,9 @@ if __name__ == "__main__":
     elif sys.argv[1] == "--debug":
         model = QNetwork()
         model.load_state_dict(torch.load("model.pth"))
+
+    elif sys.argv[1] == "--hardcode":
+        rob = HardwareRobobo(camera=True)
+        go_to_space(rob)
     else:
         raise ValueError(f"{sys.argv[1]} is not a valid argument.")
