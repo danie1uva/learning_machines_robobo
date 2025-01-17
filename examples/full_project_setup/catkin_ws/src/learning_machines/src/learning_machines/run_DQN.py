@@ -73,19 +73,20 @@ class EpsilonGreedyPolicy:
 
 # Computes Q-values for the state-action pairs in the batch
 def compute_q_vals(Q, states, actions):
-    q_actions = Q(states)
+    q_actions = Q(states)  # shape: [batch_size, 5]
     return q_actions.gather(1, actions)
 
-# Computes target values using a target network
-def compute_targets(Q_target, rewards, next_states, dones, discount_factor):
-    q_vals_next = Q_target(next_states)
+# Computes target values (no target network)
+def compute_targets(Q, rewards, next_states, dones, discount_factor):
+    # next_states shape: [batch_size, obs_dim]
+    q_vals_next = Q(next_states)
     max_q_vals, _ = q_vals_next.max(dim=1, keepdim=True)
     dones = dones.to(dtype=torch.float32)
     targets = rewards + (1 - dones) * discount_factor * max_q_vals
     return targets
 
 # Single training step
-def train(Q, Q_target, memory, optimizer, batch_size, discount_factor):
+def train(Q, memory, optimizer, batch_size, discount_factor):
     if len(memory) < batch_size:
         return None
 
@@ -100,7 +101,7 @@ def train(Q, Q_target, memory, optimizer, batch_size, discount_factor):
 
     q_val = compute_q_vals(Q, states, actions)
     with torch.no_grad():
-        target = compute_targets(Q_target, rewards, next_states, dones, discount_factor)
+        target = compute_targets(Q, rewards, next_states, dones, discount_factor)
 
     loss = F.smooth_l1_loss(q_val, target)
     optimizer.zero_grad()
@@ -110,7 +111,7 @@ def train(Q, Q_target, memory, optimizer, batch_size, discount_factor):
 
 # Check collision
 def check_collision(state):
-    return max(state) > 500
+    return max(state) > 600
 
 # Process IR sensors
 def process_irs(irs):
@@ -119,23 +120,23 @@ def process_irs(irs):
 # Convert action index to movement command
 def determine_action(action_idx):
     if action_idx == 0:    # left
-        return [0, 50, 250]
+        return [0, 50, 100]
     elif action_idx == 1:  # left-forward
-        return [25, 50, 250]
+        return [25, 50, 100]
     elif action_idx == 2:  # forward
-        return [50, 50, 250]
+        return [50, 50, 100]
     elif action_idx == 3:  # right-forward
-        return [50, 25, 250]
+        return [50, 25, 100]
     else:                  # right
-        return [50, 0, 250]
+        return [50, 0, 100]
 
 # Moves robot and calculates reward
 def move_robobo_and_calc_reward(action, rob, state):
     rob.move_blocking(*action)
-    movement_reward = 2
+    movement_reward = 1
     collision = check_collision(state)
-    collision_penalty = -5 if collision else 0
-    proximity_penalty = -2 if max(state) > 200 else 0
+    collision_penalty = -10 if collision else 0
+    proximity_penalty = -2 if max(state) > 250 else 0
     move_reward = movement_reward + collision_penalty + proximity_penalty
 
     log_entry = {
@@ -148,22 +149,20 @@ def move_robobo_and_calc_reward(action, rob, state):
 
 # Main Q-learning function
 def run_qlearning_classification(rob: IRobobo):
-    print('connected')
     num_hidden = 128
     learning_rate = 0.001
     discount_factor = 0.90
     batch_size = 32
     memory_capacity = 5000
-    episodes = 500
+    episodes = 1000
     max_steps = 75
     current_date = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    final_explore_rate = 0.05
+    final_explore_rate = 0.10
     num_steps_till_plateau = 5000
-    run_name = f"{current_date}_hidden{num_hidden}_lr{learning_rate}_gamma{discount_factor}_bs{batch_size}_mem{memory_capacity}_eps{episodes}_steps{max_steps}"
 
     wandb.init(
         project="learning_machines_DQN",
-        name=run_name,
+        name=current_date,
         config={
             "num_hidden": num_hidden,
             "learning_rate": learning_rate,
@@ -179,19 +178,19 @@ def run_qlearning_classification(rob: IRobobo):
     )
 
     Q = QNetwork(num_hidden=num_hidden)
-    Q_target = QNetwork(num_hidden=num_hidden)
-    Q_target.load_state_dict(Q.state_dict())
     optimizer = optim.Adam(Q.parameters(), lr=learning_rate)
     memory = ReplayMemory(memory_capacity)
     policy = EpsilonGreedyPolicy(Q, final_explore_rate)
 
-
     total_steps = 0
-    update_target_interval = 50
+
+    rob.play_simulation()
+    init_pos = rob.get_position()
+    init_ori = rob.get_orientation()
+    init_ori.pitch = orig_ori_pitch
 
     for episode in range(episodes):
         print(f"Episode: {episode}")
-        rob.play_simulation()
 
         raw_sensor_readings = rob.read_irs()
         state = process_irs(raw_sensor_readings)
@@ -199,14 +198,7 @@ def run_qlearning_classification(rob: IRobobo):
         total_reward = 0
         episode_length = 0
 
-        if episode % 10 == 0:
-            validation = True
-            pos = Position(-0.875,-0.098,0)
-            ori = Orientation(-90, -27, -90)
-            rob.set_position(pos, ori)
-
         for step in range(max_steps):
-            # Epsilon depends on total_steps, not local step
             eps = get_epsilon(total_steps, num_steps_till_plateau)
             policy.set_epsilon(eps)
 
@@ -216,18 +208,13 @@ def run_qlearning_classification(rob: IRobobo):
             done = collision or (step == max_steps - 1)
 
             memory.push((state, action_idx, log_entry['move_reward'], next_state, done))
-            loss = train(Q, Q_target, memory, optimizer, batch_size, discount_factor)
+            loss = train(Q, memory, optimizer, batch_size, discount_factor)
 
             total_reward += log_entry['move_reward']
             episode_length += 1
             state = next_state
             total_steps += 1
 
-            # Update target network periodically
-            if total_steps % update_target_interval == 0:
-                Q_target.load_state_dict(Q.state_dict())
-
-            # Logging
             wandb.log({
                 "move_reward": log_entry['move_reward'],
                 "loss": loss,
@@ -238,7 +225,6 @@ def run_qlearning_classification(rob: IRobobo):
                 "collision_penalty": log_entry['collision_penalty'],
                 "collision": collision,
                 "proximity_to_obstacle": max(state),
-                "validation": validation
             })
 
             if collision:
@@ -249,16 +235,25 @@ def run_qlearning_classification(rob: IRobobo):
             "total_reward": total_reward,
             "episode": episode,
             "episode_length": episode_length,
-            "validation": validation
         })
 
-        validation = False
-
         print(f"Total Reward = {total_reward}")
-        rob.stop_simulation()
+
+        if total_steps % 15 == 0:
+            random_int = random.randint(-90, 90)
+            init_ori.pitch = random_int
+        
+        else:
+            init_ori.pitch = orig_ori_pitch
+
+        rob.set_position(position = init_pos, orientation = init_ori)
+
+
+        
+    rob.stop_simulation()
 
     # Save the model
-    model_path = f"{run_name}_trained_qnetwork.pth"
+    model_path = f"{current_date}_trained_qnetwork.pth"
     torch.save(Q.state_dict(), model_path)
     wandb.save(model_path)
     print(f"Model saved to {model_path}")

@@ -22,5 +22,9 @@ if __name__ == "__main__":
     elif sys.argv[1] == "--simulation":
         rob = SimulationRobobo(identifier = 1) 
         run_qlearning_classification(rob) 
+
+    elif sys.argv[1] == "--debug":
+        model = QNetwork()
+        model.load_state_dict(torch.load("model.pth"))
     else:
         raise ValueError(f"{sys.argv[1]} is not a valid argument.")
