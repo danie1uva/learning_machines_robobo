@@ -86,11 +86,11 @@ def compute_reward(next_state, action, collision):
 
     # Append the absolute difference between wheel speeds to the buffer
     circle_buffer.append(abs(left_speed - right_speed))
-    if len(circle_buffer) > 10:  # Keep the last 10 steps in the buffer
+    if len(circle_buffer) > 2:  # Keep the last 10 steps in the buffer
         circle_buffer.pop(0)
 
     # Detect repetitive circular motion
-    consistent_circling = all(diff > 80 for diff in circle_buffer)
+    consistent_circling = all(diff > 70 for diff in circle_buffer)
     circle_penalty = -100 if consistent_circling else 0
 
     # Compute other rewards and penalties
@@ -122,10 +122,6 @@ def compute_reward(next_state, action, collision):
           f"Exploration Reward: {exploration_reward}, Small Movement Penalty: {small_movement_penalty}, "
           f"Circle Penalty: {circle_penalty}, Total: {reward}")
     return reward
-
-
-
-
 
 def check_collision(state):
     # Adjust thresholds for normalized sensor values
@@ -230,7 +226,7 @@ def run_ppo_training(rob: SimulationRobobo):
 
         for t in range(MAX_STEPS):
             mean, std = policy_net(torch.tensor(state, dtype=torch.float32).unsqueeze(0))
-            exploration_factor = max(0.1, 1.0 - episode / EPISODES)  # Reduce exploration over episodes
+            exploration_factor = max(0.05, 1.0 - episode / (EPISODES*0.5))  # Reduce exploration over episodes
             scaled_std = std * exploration_factor
 
             dist = torch.distributions.MultivariateNormal(mean, torch.diag_embed(scaled_std))
