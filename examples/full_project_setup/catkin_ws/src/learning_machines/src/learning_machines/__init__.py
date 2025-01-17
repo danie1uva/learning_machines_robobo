@@ -8,7 +8,8 @@ from .week_1_hardware_demo import (
     )
 
 from .run_DQN import (
-    run_qlearning_classification
+    run_qlearning_classification,
+    QNetwork
     )
 
 from .run_PPO import (
@@ -25,5 +26,6 @@ __all__ = (
     "stop_at_obstacle",
     "run_qlearning_classification",
     "run_ppo",
-    "rob_move"
+    "rob_move",
+    "QNetwork"
     )

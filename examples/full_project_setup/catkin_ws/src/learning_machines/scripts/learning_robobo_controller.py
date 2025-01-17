@@ -3,7 +3,7 @@ import sys
 import torch 
 
 from robobo_interface import SimulationRobobo, HardwareRobobo
-from learning_machines import run_all_actions, test_irs, stop_at_obstacle, run_qlearning_classification, run_ppo, rob_move
+from learning_machines import run_all_actions, test_irs, stop_at_obstacle, run_qlearning_classification, run_ppo, rob_move, QNetwork
 
 
 if __name__ == "__main__":
@@ -15,9 +15,9 @@ if __name__ == "__main__":
         )
     elif sys.argv[1] == "--hardware":
         rob = HardwareRobobo(camera=True)
-        torch_path = 'add path to policy.pt'
-        policy = torch.load(torch_path)
-        rob_move(policy, rob)
+        model = QNetwork()
+        model.load_state_dict(torch.load("model.pth"))
+        rob_move(model, rob)
         
     elif sys.argv[1] == "--simulation":
         rob = SimulationRobobo(identifier = 1) 
