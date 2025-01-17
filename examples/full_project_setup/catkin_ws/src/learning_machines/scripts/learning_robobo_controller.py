@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 import sys
+import torch 
 
 from robobo_interface import SimulationRobobo, HardwareRobobo
-from learning_machines import run_all_actions, test_irs, stop_at_obstacle
+from learning_machines import run_all_actions, test_irs, stop_at_obstacle, run_qlearning_classification, run_ppo, rob_move, QNetwork, go_to_space
 
 
 if __name__ == "__main__":
@@ -14,12 +15,20 @@ if __name__ == "__main__":
         )
     elif sys.argv[1] == "--hardware":
         rob = HardwareRobobo(camera=True)
+        model = QNetwork()
+        model.load_state_dict(torch.load("model.pth"))
+        rob_move(model, rob)
+        
     elif sys.argv[1] == "--simulation":
-        rob = SimulationRobobo()
+        rob = SimulationRobobo(identifier = 1) 
+        run_qlearning_classification(rob) 
+
+    elif sys.argv[1] == "--debug":
+        model = QNetwork()
+        model.load_state_dict(torch.load("model.pth"))
+
+    elif sys.argv[1] == "--hardcode":
+        rob = HardwareRobobo(camera=True)
+        go_to_space(rob)
     else:
         raise ValueError(f"{sys.argv[1]} is not a valid argument.")
-    
-    test_irs(rob) # this is to pause the robot, hopefully makes sensors read from start of obstacle movement
-    test_irs(rob)
-    stop_at_obstacle(rob, 'FrontC')
-    stop_at_obstacle(rob, 'BackC')
