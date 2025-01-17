@@ -12,6 +12,7 @@ import wandb
 import time
 import sys
 import random
+from robobo_interface import HardwareRobobo
 sys.setrecursionlimit(3000)  # Default is typically 1000
 
 def set_seed(seed=40):
@@ -149,14 +150,14 @@ def compute_reward(next_state, action, collision):
 
 def check_collision(state):
     # Adjust thresholds for normalized sensor values
-    coll_FrontLL = state[0] > 200
-    coll_FrontL = state[1] > 200
-    coll_FrontC = state[2] > 200
-    coll_FrontR = state[3] > 200
-    coll_FrontRR = state[4] > 200
-    coll_BackL = state[5] > 200
-    coll_BackC = state[6] > 200
-    coll_BackR = state[7] > 200
+    coll_FrontLL = state[0] > 150
+    coll_FrontL = state[1] > 150
+    coll_FrontC = state[2] > 150
+    coll_FrontR = state[3] > 150
+    coll_FrontRR = state[4] > 150
+    coll_BackL = state[5] > 150
+    coll_BackC = state[6] > 150
+    coll_BackR = state[7] > 150
 
     collision = any([coll_FrontLL, coll_FrontL, coll_FrontC, coll_FrontR, coll_FrontRR, coll_BackL, coll_BackC, coll_BackR])
     print(f"Normalized sensor readings: {state}, Collision: {collision}")
@@ -275,8 +276,8 @@ def run_ppo_training(rob: HardwareRobobo):
 
         wandb.log({"episode": episode, "total_reward": total_reward})
         print(f"Episode {episode} completed with reward {total_reward}")
-
-        rob.stop_simulation()
+        time.sleep(5)
+        # rob.stop_simulation()
 
     torch.save(policy_net.state_dict(), "ppo_policy.pth")
     torch.save(value_net.state_dict(), "ppo_value.pth")
