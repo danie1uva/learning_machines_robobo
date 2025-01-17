@@ -15,7 +15,7 @@ from .run_PPO import (
     run_ppo
     )
 
-from .run_PPO_hardware import (
+from .run_DQN_hardware import (
     rob_move
 )
 

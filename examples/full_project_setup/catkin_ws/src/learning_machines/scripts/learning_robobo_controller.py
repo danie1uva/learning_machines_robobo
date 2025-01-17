@@ -15,11 +15,12 @@ if __name__ == "__main__":
         )
     elif sys.argv[1] == "--hardware":
         rob = HardwareRobobo(camera=True)
+        torch_path = 'add path to policy.pt'
+        policy = torch.load(torch_path)
+        rob_move(policy, rob)
         
     elif sys.argv[1] == "--simulation":
         rob = SimulationRobobo(identifier = 1) 
+        run_qlearning_classification(rob) 
     else:
         raise ValueError(f"{sys.argv[1]} is not a valid argument.")
-    
-
-    run_qlearning_classification(rob) 

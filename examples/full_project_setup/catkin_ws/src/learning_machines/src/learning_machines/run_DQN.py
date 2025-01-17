@@ -151,10 +151,10 @@ def run_qlearning_classification(rob: IRobobo):
     print('connected')
     num_hidden = 128
     learning_rate = 0.001
-    discount_factor = 0.95
+    discount_factor = 0.90
     batch_size = 32
     memory_capacity = 5000
-    episodes = 100
+    episodes = 500
     max_steps = 75
     current_date = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     final_explore_rate = 0.05
@@ -185,6 +185,7 @@ def run_qlearning_classification(rob: IRobobo):
     memory = ReplayMemory(memory_capacity)
     policy = EpsilonGreedyPolicy(Q, final_explore_rate)
 
+
     total_steps = 0
     update_target_interval = 50
 
@@ -197,6 +198,12 @@ def run_qlearning_classification(rob: IRobobo):
 
         total_reward = 0
         episode_length = 0
+
+        if episode % 10 == 0:
+            validation = True
+            pos = Position(-0.875,-0.098,0)
+            ori = Orientation(-90, -27, -90)
+            rob.set_position(pos, ori)
 
         for step in range(max_steps):
             # Epsilon depends on total_steps, not local step
@@ -230,7 +237,8 @@ def run_qlearning_classification(rob: IRobobo):
                 "proximity_penalty": log_entry['proximity_penalty'],
                 "collision_penalty": log_entry['collision_penalty'],
                 "collision": collision,
-                "proximity_to_obstacle": max(state)
+                "proximity_to_obstacle": max(state),
+                "validation": validation
             })
 
             if collision:
@@ -240,8 +248,11 @@ def run_qlearning_classification(rob: IRobobo):
         wandb.log({
             "total_reward": total_reward,
             "episode": episode,
-            "episode_length": episode_length
+            "episode_length": episode_length,
+            "validation": validation
         })
+
+        validation = False
 
         print(f"Total Reward = {total_reward}")
         rob.stop_simulation()
