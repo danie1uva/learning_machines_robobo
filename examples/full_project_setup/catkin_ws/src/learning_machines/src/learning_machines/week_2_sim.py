@@ -32,7 +32,7 @@ GAMMA = 0.99
 LAMBDA = 0.95
 EPSILON_CLIP = 0.1
 ENTROPY_BETA = 0.05
-EPISODES = 500
+EPISODES = 1000
 MAX_STEPS = 75
 BATCH_SIZE = 64
 N_EPOCHS = 4
@@ -102,7 +102,7 @@ def compute_reward(next_state, action, collision):
     reward = (
         movement_reward +
         2 * speed_reward +
-        0.05 * smoothness_reward +
+        0.5 * smoothness_reward +
         collision_penalty +
         exploration_reward +
         small_movement_penalty
