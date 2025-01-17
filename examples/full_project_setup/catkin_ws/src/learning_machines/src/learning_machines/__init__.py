@@ -17,7 +17,8 @@ from .run_PPO import (
     )
 
 from .run_DQN_hardware import (
-    rob_move
+    rob_move,
+    go_to_space
 )
 
 __all__ = (
@@ -27,5 +28,6 @@ __all__ = (
     "run_qlearning_classification",
     "run_ppo",
     "rob_move",
-    "QNetwork"
+    "QNetwork",
+    "go_to_space"
     )
