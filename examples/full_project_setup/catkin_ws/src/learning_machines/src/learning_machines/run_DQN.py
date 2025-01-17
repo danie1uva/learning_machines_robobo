@@ -4,7 +4,7 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 from torch import optim
-import datetime as datetime
+from datetime import datetime
 import wandb
 
 
@@ -22,14 +22,13 @@ class QNetwork(nn.Module):
     
     def __init__(self, num_hidden=128):
         nn.Module.__init__(self)
-        self.l1 = nn.Linear(3, num_hidden)
+        self.l1 = nn.Linear(5, num_hidden)
         self.l2 = nn.Linear(num_hidden, 5)
 
     def forward(self, x):
         
         x = F.relu(self.l1(x))
         x = self.l2(x)
-        
         return x
 
 class ReplayMemory:
@@ -56,14 +55,8 @@ class ReplayMemory:
     def __len__(self):
         return len(self.memory)
 
-def get_epsilon(it, num_steps_till_plateau = 1000):
-    
-    if it <= 1000:
-        epsilon = 1 - it * 0.95 / num_steps_till_plateau
-    else:
-        epsilon = 0.05
-    
-    return epsilon
+def get_epsilon(it, num_steps_till_plateau=1000):
+    return max(0.05, 1 - it * 0.95 / num_steps_till_plateau)
 
 class EpsilonGreedyPolicy(object):
     """
@@ -163,10 +156,10 @@ def train(Q, memory, optimizer, batch_size, discount_factor):
     return loss.item() 
 
 def check_collision(state): 
-    return max(state) > 800 
+    return max(state) > 700 
 
 def process_irs(irs):
-    state = [irs[7], irs[4], irs[5]]
+    state = [irs[7], irs[2], irs[4], irs[3], irs[5]]
     return state 
 
 def determine_action(int):
@@ -235,7 +228,7 @@ def run_qlearning_classification(rob: IRobobo):
     current_date = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     final_explore_rate = .05
     num_steps_till_plateau = 5000
-    run_name = f"{current_date}_hidden{num_hidden}_lr{learning_rate}_gamma{discount_factor}_bs{batch_size}_mem{memory_capacity}_eps{episodes}_steps{max_steps}_epsil{final_explore_rate}_rounds_of_exp{num_steps_till_plateau}"
+    run_name = f"{current_date}_hidden{num_hidden}_lr{learning_rate}_gamma{discount_factor}_bs{batch_size}_mem{memory_capacity}_eps{episodes}_steps{max_steps}_epsil{final_explore_rate}_eps_of_exp{num_steps_till_plateau}"
 
     wandb.init(
         project="learning_machines_DQN",
@@ -261,12 +254,12 @@ def run_qlearning_classification(rob: IRobobo):
     policy = EpsilonGreedyPolicy(Q, final_explore_rate) 
 
 
-    for round in range(episodes):  
-        print(f"Round: {round}")
+    for episode in range(episodes):  
+        print(f"Episode: {episode}")
 
         rob.play_simulation()
         
-        # if round % 20 == 0:
+        # if episode % 20 == 0:
         #     validation = True
         #     pos = Position(-0.875,-0.098,0)
         #     ori = Orientation(-90, -27, -90)
@@ -274,11 +267,13 @@ def run_qlearning_classification(rob: IRobobo):
         
         raw_sensor_readings = rob.read_irs()
         state = process_irs(raw_sensor_readings)
+        print('state:', state) 
 
         total_reward = 0
-        round_length = 0 
+        episode_length = 0 
 
         for step in range(max_steps):
+            print('state:', state) 
             eps = get_epsilon(step, num_steps_till_plateau)
             policy.set_epsilon(eps)
             action = policy.sample_action(state)
@@ -291,14 +286,14 @@ def run_qlearning_classification(rob: IRobobo):
 
 
             total_reward += log_entry['move_reward']
-            round_length += 1
+            episode_length += 1
             state = next_state
             
             # per step logs 
             wandb.log({
                 "move_reward": log_entry['move_reward'],
                 "loss": loss,
-                "round": round,
+                "episode": episode,
                 "step": step,
                 'proximity_penalty': log_entry['proximity_penalty'],
                 'collision_penalty': log_entry['collision_penalty'],
@@ -306,14 +301,14 @@ def run_qlearning_classification(rob: IRobobo):
                 })
             
             if collision:
-                print(f"Collision detected! Ending episode {round} early with penalty.")
+                print(f"Collision detected! Ending episode {episode} early with penalty.")
                 break
 
 
         # episode logs 
         wandb.log({"total_reward": total_reward,
-                    "round": round,
-                    "round_length": round_length,
+                    "episode": episode,
+                    "episode_length": episode_length,
                     # "validation": validation
                     }) 
         
