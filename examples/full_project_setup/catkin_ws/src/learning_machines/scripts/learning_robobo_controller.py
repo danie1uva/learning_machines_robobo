@@ -2,7 +2,7 @@
 import sys
 
 from robobo_interface import SimulationRobobo, HardwareRobobo
-from learning_machines import run_all_actions, test_irs, stop_at_obstacle, run_qlearning_classification
+from learning_machines import run_all_actions, test_irs, stop_at_obstacle, run_qlearning_classification, run_ppo
 
 
 if __name__ == "__main__":
@@ -21,4 +21,4 @@ if __name__ == "__main__":
     
     # test_irs(rob) # this is to pause the robot, hopefully makes sensors read from start of obstacle movement
     # test_irs(rob)
-    run_qlearning_classification(rob) 
+    run_ppo(rob) 

@@ -164,17 +164,17 @@ def move_robobo_and_calc_reward(scaler, action, rob, state):
 def run_qlearning_classification(rob: IRobobo):
     print('connected')
 
-    num_hidden = 128
+    num_hidden = 256
     learning_rate = 0.001
     discount_factor = 0.9
     batch_size = 32
     memory_capacity = 1000
-    episodes = 2000 
+    episodes = 5000 
     max_steps = 75
     current_date = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     final_explore_rate = .05
-    num_rounds_till_plateau = 5000
-    run_name = f"{current_date}_hidden{num_hidden}_lr{learning_rate}_gamma{discount_factor}_bs{batch_size}_mem{memory_capacity}_eps{episodes}_steps{max_steps}_epsil{final_explore_rate}_rounds_of_exp{num_rounds_till_plateau}"
+    num_steps_till_plateau = 5000
+    run_name = f"{current_date}_hidden{num_hidden}_lr{learning_rate}_gamma{discount_factor}_bs{batch_size}_mem{memory_capacity}_eps{episodes}_steps{max_steps}_epsil{final_explore_rate}_rounds_of_exp{num_steps_till_plateau}"
 
     wandb.init(
         project="learning_machines",
@@ -188,7 +188,8 @@ def run_qlearning_classification(rob: IRobobo):
             "episodes": episodes,
             "max_steps": max_steps,
             "date": current_date,
-            "final_explore_rate": final_explore_rate
+            "final_explore_rate": final_explore_rate,
+            "num_steps_till_plateau": num_steps_till_plateau
         }
     )
 
@@ -217,7 +218,7 @@ def run_qlearning_classification(rob: IRobobo):
         round_length = 0 
 
         for step in range(max_steps):
-            eps = get_epsilon(step, num_rounds_till_plateau)
+            eps = get_epsilon(step, num_steps_till_plateau)
             policy.set_epsilon(eps)
             action = policy.sample_action(state)
 
