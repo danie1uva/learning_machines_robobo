@@ -11,8 +11,18 @@ from datetime import datetime
 import wandb
 import time
 import sys
-sys.setrecursionlimit(2000)  # Default is typically 1000
+import random
+sys.setrecursionlimit(3000)  # Default is typically 1000
 
+def set_seed(seed=46):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+
+    # Ensures deterministic behaviour in PyTorch
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
 
 # week_2_sim.py
 irs_positions = {
@@ -37,17 +47,8 @@ MAX_STEPS = 75
 BATCH_SIZE = 64
 N_EPOCHS = 4
 
-SCALER_PATH = 'software_powertrans_scaler.gz'
-if not os.path.exists(SCALER_PATH):
-    print("Scaler not found. Generating a new scaler.")
-    simulated_irs_data = np.random.rand(1000, 8) * 10
-    scaler = PowerTransformer()
-    scaler.fit(simulated_irs_data)
-    joblib.dump(scaler, SCALER_PATH)
-    print(f"Scaler saved to {SCALER_PATH}")
-else:
-    print(f"Loading existing scaler from {SCALER_PATH}")
-    scaler = joblib.load(SCALER_PATH)
+SCALER_PATH = 'C:\Users\esrio_0v2bwuf\Desktop\Master_AI\Learning Machines\learning_machines_robobo\examples\full_project_setup\catkin_ws\src\learning_machines\src\learning_machines\software_powertrans_scaler.gz'
+scaler = joblib.load(SCALER_PATH)
 
 class PPOPolicyNetwork(nn.Module):
     def __init__(self, input_dim, output_dim):
@@ -64,7 +65,7 @@ class PPOPolicyNetwork(nn.Module):
     def forward(self, x):
         x = torch.relu(self.fc1(x))
         x = torch.relu(self.fc2(x))
-        mean = torch.tanh(self.fc3_mean(x)) * 100
+        mean = torch.sigmoid(self.fc3_mean(x)) * 100
         std = torch.exp(self.fc3_std(x).clamp(-2, 2))
         return mean, std
 
@@ -95,24 +96,24 @@ def compute_reward(next_state, action, collision):
 
     # Detect repetitive circular motion
     consistent_circling = all(diff > 70 for diff in circle_buffer)
-    circle_penalty = -300 if consistent_circling else 0
+    circle_penalty = -250 if consistent_circling else 0
 
     # Compute other rewards and penalties
     movement_magnitude = abs(left_speed) + abs(right_speed)
     movement_reward = 50
     speed_reward = movement_magnitude / 2
     smoothness_reward = -abs(left_speed - right_speed)
-    collision_penalty = -500 if collision else 0
+    collision_penalty = -650 if collision else 0
     small_movement_penalty = -50 if movement_magnitude < 50 else 0
 
-    # Extra reward if both wheels have the same direction and a similar magnitude
-    if (left_speed > 0 and right_speed > 0) or (left_speed < 0 and right_speed < 0):
-        alignment_bonus = -abs(abs(left_speed) - abs(right_speed))
-        # This starts at 0 if they're exactly the same magnitude and
-        # goes negative the more different they are.
-        # Or you can do a positive reward for them being close to each other.
-    else:
-        alignment_bonus = -200 # penalty if wheels in opposite directions
+    # # Extra reward if both wheels have the same direction and a similar magnitude
+    # if (left_speed > 0 and right_speed > 0) or (left_speed < 0 and right_speed < 0):
+    #     alignment_bonus = 100 - abs(left_speed - right_speed)
+    #     # This starts at 0 if they're exactly the same magnitude and
+    #     # goes negative the more different they are.
+    #     # Or you can do a positive reward for them being close to each other.
+    # else:
+    #     alignment_bonus = -200 # penalty if wheels in opposite directions
 
     # Reward for exploring new states
     state_hash = tuple(next_state.round(2))
@@ -122,12 +123,12 @@ def compute_reward(next_state, action, collision):
     reward = (
         movement_reward +
         2 * speed_reward +
-        0.35 * smoothness_reward +
+        0.50 * smoothness_reward +
         collision_penalty +
         exploration_reward +
         small_movement_penalty +
-        circle_penalty +
-        alignment_bonus
+        circle_penalty #+
+        #alignment_bonus
     )
 
     # Debug information
@@ -212,6 +213,7 @@ def ppo_update(policy_net, value_net, optimizer_policy, optimizer_value,
 def run_ppo_training(rob: SimulationRobobo):
     obs_dim = 8
     act_dim = 2
+    set_seed()
 
     policy_net = PPOPolicyNetwork(obs_dim, act_dim)
     value_net = PPOValueNetwork(obs_dim)
@@ -270,9 +272,37 @@ def run_ppo_training(rob: SimulationRobobo):
 
             #     left_speed, right_speed = map(int, action.squeeze().tolist())
 
+            # OVERRIDE ACTION LOGIC:
+            # Compute probabilities for overrides (forward and right turn)
+            forward_override_probability = 0.25 * (1.0 - (episode / (EPISODES*0.25)))  # Decay from 25% to 0%
+            right_turn_override_probability = 0.20 * (1.0 - (episode / (0.25 * EPISODES)))  # Decay from 10% to 0%
+
+            # Sample a random number to decide which override to apply
+            random_choice = np.random.rand()
+
+            if random_choice < forward_override_probability:
+                # Force both wheels to have the same speed (move forward)
+                forced_speed = np.random.randint(20, 101)
+                left_speed = forced_speed
+                right_speed = forced_speed
+                print(f"Episode {episode}, Step {t}: FORCED FORWARD => Speed: {forced_speed}")
+
+            elif random_choice < forward_override_probability + right_turn_override_probability:
+                # Force a right turn (left wheel faster than the right wheel)
+                forced_left_speed = np.random.randint(50, 101)  # Higher speed for left wheel
+                forced_right_speed = np.random.randint(0, 31)  # Lower speed for right wheel
+                left_speed = forced_left_speed
+                right_speed = forced_right_speed
+                print(f"Episode {episode}, Step {t}: FORCED RIGHT TURN => Left: {forced_left_speed}, Right: {forced_right_speed}")
+            else:
+                # Use policy-selected action (default behavior)
+                left_speed, right_speed = map(int, action.squeeze().tolist())
+                print(f"Episode {episode}, Step {t}: POLICY ACTION => Left: {left_speed}, Right: {right_speed}")
+
+
             # Clip actions to ensure smooth movement
-            left_speed = max(min(left_speed, 100), -100)
-            right_speed = max(min(right_speed, 100), -100)
+            left_speed = max(min(left_speed, 100), 0)
+            right_speed = max(min(right_speed, 100), 0)
             if abs(left_speed) + abs(right_speed) < 20:  # Minimum movement threshold
                 left_speed = np.sign(left_speed) * 20
                 right_speed = np.sign(right_speed) * 20
@@ -318,4 +348,5 @@ def run_ppo_training(rob: SimulationRobobo):
 
     torch.save(policy_net.state_dict(), "ppo_policy.pth")
     torch.save(value_net.state_dict(), "ppo_value.pth")
+
     print("Training complete!")
