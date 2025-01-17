@@ -225,10 +225,10 @@ def ppo_update(policy_net, value_net, optimizer_policy, optimizer_value,
             optimizer_value.step()
 
 
-def run_ppo_training(rob: SimulationRobobo):
+def run_ppo_training(rob: HardwareRobobo):
+    """Train PPO on hardware."""
     obs_dim = 8
     act_dim = 2
-    set_seed()
 
     policy_net = PPOPolicyNetwork(obs_dim, act_dim)
     value_net = PPOValueNetwork(obs_dim)
@@ -238,95 +238,23 @@ def run_ppo_training(rob: SimulationRobobo):
     wandb.init(project="learning_machines", config={"episodes": EPISODES, "max_steps": MAX_STEPS})
 
     for episode in range(EPISODES):
-        rob.play_simulation()
-
-        # Extract the initial position and orientation from the environment
-        initial_position = rob.get_position()
-        initial_orientation = rob.get_orientation()
-
-        print(f"Episode {episode}: Initial position: {initial_position}, Initial orientation: {initial_orientation}")
-
-        # Set the robot to its initial position and orientation (if needed)
-        rob.set_position(initial_position, initial_orientation)
-
         states, actions, rewards, log_probs, dones, values = [], [], [], [], [], []
-        # state = preprocess_state(scaler, rob)
         state = preprocess_state(rob)
-
         done = False
-
-        total_reward = 0  # Track the total reward for the episode
-        ep_len = 0
+        total_reward = 0
 
         for t in range(MAX_STEPS):
             mean, std = policy_net(torch.tensor(state, dtype=torch.float32).unsqueeze(0))
-            exploration_factor = max(0.10, 1.0 - episode / (EPISODES*0.5))  # Reduce exploration over episodes
-            scaled_std = std * exploration_factor
-
-            dist = torch.distributions.MultivariateNormal(mean, torch.diag_embed(scaled_std))
+            dist = torch.distributions.MultivariateNormal(mean, torch.diag_embed(std))
             action = dist.sample()
             log_prob = dist.log_prob(action)
 
             left_speed, right_speed = map(int, action.squeeze().tolist())
-            
-            # Determine if random action should override
-            # random_action_chance = 0.3 if episode < EPISODES * 0.2 else 0.0  # 30% chance for first 20% of episodes
-            # if np.random.rand() < random_action_chance:
-            #     # Use random actions
-            #     left_speed = np.random.randint(-100, 101)
-            #     right_speed = np.random.randint(-100, 101)
-            #     log_prob = None  # No log probability for random actions
-            #     print(f"Episode {episode}, Step {t}: Random action selected - Left: {left_speed}, Right: {right_speed}")
-            # else:
-            #     # Use policy for action selection
-            #     mean, std = policy_net(torch.tensor(state, dtype=torch.float32).unsqueeze(0))
-            #     exploration_factor = max(0.05, 1.0 - episode / (EPISODES * 0.5))  # Reduce exploration over episodes
-            #     scaled_std = std * exploration_factor
-
-            #     dist = torch.distributions.MultivariateNormal(mean, torch.diag_embed(scaled_std))
-            #     action = dist.sample()
-            #     log_prob = dist.log_prob(action)
-
-            #     left_speed, right_speed = map(int, action.squeeze().tolist())
-
-            # OVERRIDE ACTION LOGIC:
-            # Compute probabilities for overrides (forward and right turn)
-            forward_override_probability = 0.25 * (1.0 - (episode / (EPISODES*0.25)))  # Decay from 25% to 0%
-            right_turn_override_probability = 0.20 * (1.0 - (episode / (0.25 * EPISODES)))  # Decay from 10% to 0%
-
-            # Sample a random number to decide which override to apply
-            random_choice = np.random.rand()
-
-            if random_choice < forward_override_probability:
-                # Force both wheels to have the same speed (move forward)
-                forced_speed = np.random.randint(20, 101)
-                left_speed = forced_speed
-                right_speed = forced_speed
-                print(f"Episode {episode}, Step {t}: FORCED FORWARD => Speed: {forced_speed}")
-
-            elif random_choice < forward_override_probability + right_turn_override_probability:
-                # Force a right turn (left wheel faster than the right wheel)
-                forced_left_speed = np.random.randint(60, 101)  # Higher speed for left wheel
-                forced_right_speed = np.random.randint(0, 21)  # Lower speed for right wheel
-                left_speed = forced_left_speed
-                right_speed = forced_right_speed
-                print(f"Episode {episode}, Step {t}: FORCED RIGHT TURN => Left: {forced_left_speed}, Right: {forced_right_speed}")
-            else:
-                # Use policy-selected action (default behavior)
-                left_speed, right_speed = map(int, action.squeeze().tolist())
-                print(f"Episode {episode}, Step {t}: POLICY ACTION => Left: {left_speed}, Right: {right_speed}")
-
-
-            # Clip actions to ensure smooth movement
-            left_speed = max(min(left_speed, 100), 0)
-            right_speed = max(min(right_speed, 100), 0)
-            if abs(left_speed) + abs(right_speed) < 20:  # Minimum movement threshold
-                left_speed = np.sign(left_speed) * 20
-                right_speed = np.sign(right_speed) * 20
+            left_speed = max(min(left_speed, 100), -100)
+            right_speed = max(min(right_speed, 100), -100)
 
             rob.move_blocking(left_speed, right_speed, 250)
 
-            # next_state = preprocess_state(scaler, rob)
             next_state = preprocess_state(rob)
             collision = check_collision(next_state)
             reward = compute_reward(next_state, action.squeeze().detach().numpy(), collision)
@@ -338,40 +266,18 @@ def run_ppo_training(rob: SimulationRobobo):
             dones.append(done)
             values.append(value_net(torch.tensor(state, dtype=torch.float32).unsqueeze(0)).item())
 
-            total_reward += reward  # Accumulate reward
-            ep_len += 1
-
+            total_reward += reward
             state = next_state
-
-
 
             if collision:
                 done = True
                 break
 
-        # Log the total reward, round length, and other metrics for the episode
-        print(f"Total reward for episode {episode}: {total_reward}")
-        wandb.log({
-            "episode": episode,
-            "total_reward": total_reward,
-            "round_length": ep_len #,  # Number of steps in the round
-        })
+        wandb.log({"episode": episode, "total_reward": total_reward})
+        print(f"Episode {episode} completed with reward {total_reward}")
 
-        if episode % 50 == 0:
-            torch.save(policy_net.state_dict(), f"ppo_policy_{episode}.pth")
-            wandb.save(f"ppo_policy_{episode}.pth")
-
-        values.append(0 if done else value_net(torch.tensor(state, dtype=torch.float32).unsqueeze(0)).item())
-        advantages = compute_advantages(rewards, values, dones)
-
-        ppo_update(policy_net, value_net, optimizer_policy, optimizer_value,
-                states, actions, log_probs, rewards, advantages)
-
-        print(f"Episode {episode} completed")
         rob.stop_simulation()
 
     torch.save(policy_net.state_dict(), "ppo_policy.pth")
-    wandb.save("ppo_policy.pth")
     torch.save(value_net.state_dict(), "ppo_value.pth")
-
     print("Training complete!")

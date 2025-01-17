@@ -7,7 +7,7 @@ from .week_1_hardware_demo import (
     stop_at_obstacle,
 )
 
-from .week_2_sim import (
+from .week_2_hardware import (
     irs_positions,
     compute_reward,
     check_collision,

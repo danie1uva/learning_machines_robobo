@@ -10,12 +10,15 @@ if __name__ == "__main__":
             Pass `--hardware` or `--simulation` to specify."""
         )
     elif sys.argv[1] == "--hardware":
-        rob = HardwareRobobo(camera=True)
-        stop_at_obstacle(rob, 'FrontC')  # Example: hardware-specific action
+        rob = HardwareRobobo(camera=False)  # Initialize the hardware Robobo
+        if len(sys.argv) > 2 and sys.argv[2] == "--train-ppo":
+            run_ppo_training(rob)  # Train PPO on the hardware
+        else:
+            stop_at_obstacle(rob, 'FrontC')  # Example: hardware-specific action
     elif sys.argv[1] == "--simulation":
         rob = SimulationRobobo()
         if len(sys.argv) > 2 and sys.argv[2] == "--train-ppo":
-            run_ppo_training(rob)  # Train PPO for obstacle avoidance
+            run_ppo_training(rob)  # Train PPO in simulation
         else:
             raise ValueError("Specify --train-ppo for simulation training.")
     else:
