@@ -237,6 +237,7 @@ def run_ppo_training(rob: SimulationRobobo):
         done = False
 
         total_reward = 0  # Track the total reward for the episode
+        ep_len = 0
 
         for t in range(MAX_STEPS):
             mean, std = policy_net(torch.tensor(state, dtype=torch.float32).unsqueeze(0))
@@ -290,6 +291,7 @@ def run_ppo_training(rob: SimulationRobobo):
             values.append(value_net(torch.tensor(state, dtype=torch.float32).unsqueeze(0)).item())
 
             total_reward += reward  # Accumulate reward
+            ep_len += 1
 
             state = next_state
 
@@ -302,7 +304,7 @@ def run_ppo_training(rob: SimulationRobobo):
         wandb.log({
             "episode": episode,
             "total_reward": total_reward,
-            "round_length": t + 1#,  # Number of steps in the round
+            "round_length": ep_len #,  # Number of steps in the round
         })
 
         values.append(0 if done else value_net(torch.tensor(state, dtype=torch.float32).unsqueeze(0)).item())
