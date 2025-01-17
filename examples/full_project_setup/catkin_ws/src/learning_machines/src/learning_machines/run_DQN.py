@@ -10,6 +10,7 @@ import wandb
 from robobo_interface import (
     IRobobo,
     SimulationRobobo,
+    HardwareRobobo,
 )
 
 from robobo_interface.datatypes import (
@@ -117,17 +118,34 @@ def process_irs(irs):
     return [irs[7], irs[2], irs[4], irs[3], irs[5]]
 
 # Convert action index to movement command
-def determine_action(action_idx):
-    if action_idx == 0:    # left
-        return [0, 50, 250]
-    elif action_idx == 1:  # left-forward
-        return [25, 50, 250]
-    elif action_idx == 2:  # forward
-        return [50, 50, 250]
-    elif action_idx == 3:  # right-forward
-        return [50, 25, 250]
-    else:                  # right
-        return [50, 0, 250]
+def determine_action(action_idx, rob):
+
+    if isinstance(rob, SimulationRobobo):
+        if action_idx == 0:    # left
+            return [0, 50, 250]
+        elif action_idx == 1:  # left-forward
+            return [25, 50, 250]
+        elif action_idx == 2:  # forward
+            return [50, 50, 250]
+        elif action_idx == 3:  # right-forward
+            return [50, 25, 250]
+        else:                  # right
+            return [50, 0, 250]
+        
+    if isinstance(rob, HardwareRobobo):
+        if action_idx == 0:  # left
+            action_cmd = list(np.round(np.array([0, 25, 150]) * 0.25).astype(int))
+        elif action_idx == 1:  # left-forward
+            action_cmd = list(np.round(np.array([10, 20, 150]) * 0.25).astype(int))
+        elif action_idx == 2:  # forward
+            action_cmd = list(np.round(np.array([25, 25, 150]) * 0.25).astype(int))
+        elif action_idx == 3:  # right-forward
+            action_cmd = list(np.round(np.array([20, 10, 150]) * 0.25).astype(int))
+        elif action_idx == 4:  # right
+            action_cmd = list(np.round(np.array([25, 0, 150]) * 0.25).astype(int))
+        
+        # Pass integers to the move function
+        rob.move(*action_cmd)
 
 # Moves robot and calculates reward
 def move_robobo_and_calc_reward(action, rob, state):
