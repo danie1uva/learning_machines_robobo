@@ -15,10 +15,15 @@ from .run_PPO import (
     run_ppo
     )
 
+from .run_PPO_hardware import (
+    rob_move
+)
+
 __all__ = (
     "run_all_actions",
     "test_irs",
     "stop_at_obstacle",
     "run_qlearning_classification",
-    "run_ppo"
+    "run_ppo",
+    "rob_move"
     )
