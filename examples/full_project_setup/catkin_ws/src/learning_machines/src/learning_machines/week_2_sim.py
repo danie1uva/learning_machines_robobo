@@ -152,9 +152,6 @@ def ppo_update(policy_net, value_net, optimizer_policy, optimizer_value,
     rewards = torch.tensor(np.array(rewards), dtype=torch.float32).unsqueeze(-1)
     advantages = torch.tensor(np.array(advantages), dtype=torch.float32).unsqueeze(-1)
 
-    # avg_policy_loss = 0
-    # avg_value_loss = 0
-    # total_batches = 0
 
     for _ in range(N_EPOCHS):
         for i in range(0, len(states), BATCH_SIZE):
@@ -187,15 +184,6 @@ def ppo_update(policy_net, value_net, optimizer_policy, optimizer_value,
             optimizer_value.zero_grad()
             value_loss.backward()
             optimizer_value.step()
-
-    #         avg_policy_loss += policy_loss.item()
-    #         avg_value_loss += value_loss.item()
-    #         total_batches += 1
-
-    # # Return average losses
-    # avg_policy_loss /= total_batches
-    # avg_value_loss /= total_batches
-    # return avg_policy_loss, avg_value_loss
 
 
 def run_ppo_training(rob: SimulationRobobo):
@@ -266,25 +254,12 @@ def run_ppo_training(rob: SimulationRobobo):
                 done = True
                 break
 
-
-        # values.append(0 if done else value_net(torch.tensor(state, dtype=torch.float32).unsqueeze(0)).item())
-        # advantages = compute_advantages(rewards, values, dones)
-
-        # # Update PPO and get losses
-        # avg_policy_loss, avg_value_loss = ppo_update(
-        #     policy_net, value_net, optimizer_policy, optimizer_value,
-        #     states, actions, log_probs, rewards, advantages
-        # )
-
-        # print(f"Episode {episode} completed")
-
         # Log the total reward, round length, and other metrics for the episode
         print(f"Total reward for episode {episode}: {total_reward}")
         wandb.log({
             "episode": episode,
             "total_reward": total_reward,
             "round_length": t + 1#,  # Number of steps in the round
-            # "loss": policy_loss.item() if 'policy_loss' in locals() else 0  # Placeholder for loss if not available
         })
 
         values.append(0 if done else value_net(torch.tensor(state, dtype=torch.float32).unsqueeze(0)).item())
