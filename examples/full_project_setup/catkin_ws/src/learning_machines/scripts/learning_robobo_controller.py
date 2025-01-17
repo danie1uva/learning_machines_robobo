@@ -4,7 +4,7 @@ import torch
 import os
 
 from robobo_interface import SimulationRobobo, HardwareRobobo
-from learning_machines import run_all_actions, test_irs, stop_at_obstacle, run_qlearning_classification, run_ppo, rob_move, QNetwork
+from learning_machines import run_all_actions, test_irs, stop_at_obstacle, run_qlearning_classification, run_ppo, rob_move, go_to_space
 
 
 if __name__ == "__main__":
@@ -45,5 +45,9 @@ if __name__ == "__main__":
         print(f"Arguments received: {sys.argv}")
         rob = SimulationRobobo(identifier=1)
         run_qlearning_classification(rob)
+
+    elif sys.argv[1] == "--hardcode":
+        rob = HardwareRobobo(camera=True)
+        go_to_space(rob)
     else:
         raise ValueError(f"{sys.argv[1]} is not a valid argument.")

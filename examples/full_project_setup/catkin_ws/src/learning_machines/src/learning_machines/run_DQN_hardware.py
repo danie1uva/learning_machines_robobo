@@ -54,9 +54,9 @@ def go_to_space(rob: IRobobo):
         irs = rob.read_irs()
         irs = process_irs(irs)
         coll = check_collision(irs)
-        irs[1] = irs[1] * .75
-        irs[3] = irs[3] * .75
-        irs[2] = irs[2] * .5 
+        # irs[1] = irs[1] * .75
+        # irs[3] = irs[3] * .75
+        # irs[2] = irs[2] * .5 
         if coll:
             break
         small_dir = irs.index(min(irs))

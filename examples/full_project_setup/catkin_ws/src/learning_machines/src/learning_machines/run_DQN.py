@@ -134,15 +134,15 @@ def determine_action(action_idx, rob):
         
     if isinstance(rob, HardwareRobobo):
         if action_idx == 0:  # left
-            action_cmd = list(np.round(np.array([0, 25, 150]) * 0.25).astype(int))
+            action_cmd = list(np.round(np.array([0, 25, 100]) * 0.10).astype(int))
         elif action_idx == 1:  # left-forward
-            action_cmd = list(np.round(np.array([10, 20, 150]) * 0.25).astype(int))
+            action_cmd = list(np.round(np.array([10, 20, 100]) * 0.10).astype(int))
         elif action_idx == 2:  # forward
-            action_cmd = list(np.round(np.array([25, 25, 150]) * 0.25).astype(int))
+            action_cmd = list(np.round(np.array([25, 25, 100]) * 0.10).astype(int))
         elif action_idx == 3:  # right-forward
-            action_cmd = list(np.round(np.array([20, 10, 150]) * 0.25).astype(int))
+            action_cmd = list(np.round(np.array([20, 10, 100]) * 0.10).astype(int))
         elif action_idx == 4:  # right
-            action_cmd = list(np.round(np.array([25, 0, 150]) * 0.25).astype(int))
+            action_cmd = list(np.round(np.array([25, 0, 100]) * 0.10).astype(int))
         
         # Pass integers to the move function
         rob.move(*action_cmd)
