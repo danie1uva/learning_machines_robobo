@@ -3,7 +3,7 @@ import sys
 import torch 
 
 from robobo_interface import SimulationRobobo, HardwareRobobo
-from learning_machines import run_all_actions, test_irs, stop_at_obstacle, run_qlearning_classification, run_ppo, rob_move, QNetwork, go_to_space
+from learning_machines import train_dqn_with_coppeliasim, rob_move, go_to_space, QNetwork
 
 
 if __name__ == "__main__":
@@ -21,7 +21,7 @@ if __name__ == "__main__":
         
     elif sys.argv[1] == "--simulation":
         rob = SimulationRobobo(identifier = 1) 
-        run_qlearning_classification(rob) 
+        train_dqn_with_coppeliasim(rob) 
 
     elif sys.argv[1] == "--debug":
         model = QNetwork()

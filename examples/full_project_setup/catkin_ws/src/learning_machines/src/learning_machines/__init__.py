@@ -21,6 +21,10 @@ from .run_DQN_hardware import (
     go_to_space
 )
 
+from .DQN_V2 import (
+    train_dqn_with_coppeliasim
+)
+
 __all__ = (
     "run_all_actions",
     "test_irs",
@@ -29,5 +33,6 @@ __all__ = (
     "run_ppo",
     "rob_move",
     "QNetwork",
-    "go_to_space"
+    "go_to_space",
+    "train_dqn_with_coppeliasim",
     )

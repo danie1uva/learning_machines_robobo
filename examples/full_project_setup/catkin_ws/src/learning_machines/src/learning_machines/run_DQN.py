@@ -187,7 +187,7 @@ def run_qlearning_classification(rob: IRobobo):
     rob.play_simulation()
     init_pos = rob.get_position()
     init_ori = rob.get_orientation()
-    init_ori.pitch = orig_ori_pitch
+    orig_ori_pitch = init_ori.pitch 
 
     for episode in range(episodes):
         print(f"Episode: {episode}")
