@@ -1,31 +1,31 @@
-from .test_actions import (
+from .week_1.test_actions import (
     run_all_actions, 
     )
 
-from .week_1_hardware_demo import (
+from .week_1.week_1_hardware_demo import (
     stop_at_obstacle,
     )
 
-from .run_DQN import (
+from .obstacle_avoidance.run_DQN import (
     run_qlearning_classification,
     QNetwork
     )
 
-from .run_PPO import (
+from .obstacle_avoidance.run_PPO import (
     run_ppo
     )
 
-from .run_DQN_hardware import (
+from .obstacle_avoidance.run_DQN_hardware import (
     rob_move,
     go_to_space
 )
 
-from .DQN_V2 import (
+from .obstacle_avoidance.DQN_V2 import (
     train_dqn_with_coppeliasim,
     run_dqn_with_coppeliasim
 )
 
-from .foraging import (
+from .week_3.foraging import (
     forage 
 )
 

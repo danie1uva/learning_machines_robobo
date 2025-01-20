@@ -11,7 +11,7 @@ from stable_baselines3.common.callbacks import BaseCallback
 
 from robobo_interface import IRobobo
 
-from .coppelia_env import CoppeliaSimEnv 
+from ..coppelia_env import CoppeliaSimEnv 
 
 class WandbLoggingCallback(BaseCallback):
     def __init__(self, verbose=0):
