@@ -1,3 +1,11 @@
 from ultralytics import YOLO
+import cv2
+import torch
 
-#load 
+# Check if GPU is available
+print("CUDA available:", torch.cuda.is_available())
+print("Device name:", torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CPU")
+
+model = YOLO("yolo11x.pt")
+results = model.predict(source = "0", show=True, device = "cuda")
+print(results)
