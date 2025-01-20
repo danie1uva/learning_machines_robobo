@@ -2,14 +2,8 @@ from torchvision.models import detection
 from imutils.video import VideoStream
 from imutils.video import FPS
 import numpy as np
-import argparse
-import imutils
-import pickle
 import torch
-import time
 import cv2
-import os
-import time
 ''' it says best to use "frcnn-mobilenet" for fast object detection and I think we want to be fast'''
 
 def detect_green_areas(frame):
@@ -56,7 +50,7 @@ def process_image(input_image):
     # elapsed_time = time.time() - start_time  # End timing
     # print(f"Segmentation time for {image_file}: {elapsed_time:.4f} seconds")  # Print elapsed time
     coordinates_boxes = []
-    num_boxes = 0
+    
     for contour in contours:
         (x, y, w, h) = cv2.boundingRect(contour)
         if w * h > 5000:
@@ -64,7 +58,7 @@ def process_image(input_image):
             cv2.putText(orig, "Green Box", (x, y - 10),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
             coordinates_boxes.append(tuple([x,y,w,h]))
-            num_boxes += 1
+            
     
     height, width, channels = frame.shape
     # Object detection
@@ -95,9 +89,8 @@ def process_image(input_image):
     cv2.imshow("Processed Image", orig)
     cv2.waitKey(0)  # Wait for keypress to move to the next image
     cv2.destroyAllWindows()
-    return width, height, coordinates_boxes, num_boxes
+    return width, height, coordinates_boxes, len(coordinates_boxes)
 
-width, height, coordinates_boxes, num_boxes = process_image("/Users/valeriasepicacchi/Documents/GitHub/learning_machines_robobo/examples/full_project_setup/catkin_ws/src/learning_machines/src/learning_machines/images_detection/IMG_4090.png")
 
 '''
 ap = argparse.ArgumentParser()
