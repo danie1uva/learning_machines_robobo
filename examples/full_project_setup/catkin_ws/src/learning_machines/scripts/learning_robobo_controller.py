@@ -3,7 +3,14 @@ import sys
 import torch 
 
 from robobo_interface import SimulationRobobo, HardwareRobobo
-from learning_machines import train_dqn_with_coppeliasim, rob_move, go_to_space, QNetwork, run_dqn_with_coppeliasim, run_all_actions
+from learning_machines import (train_dqn_with_coppeliasim, 
+                               rob_move, 
+                               go_to_space, 
+                               QNetwork, 
+                               run_dqn_with_coppeliasim, 
+                               run_all_actions,
+                               forage 
+)
 
 
 if __name__ == "__main__":
@@ -39,6 +46,14 @@ if __name__ == "__main__":
     elif sys.argv[1] == "--test_controls":
         rob = HardwareRobobo(camera=True)
         run_all_actions(rob)
+
+    elif sys.argv[1] == "--forage" and sys.argv[2] == "--simulation":
+        rob = SimulationRobobo()
+        forage(rob)
+
+    elif sys.argv[1] == "--forage" and sys.argv[2] == "--hardware":
+        rob = HardwareRobobo(camera=True)
+        forage(rob)
 
     else:
         raise ValueError(f"{sys.argv[1]} is not a valid argument.")

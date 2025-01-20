@@ -6,21 +6,21 @@ from .week_1.week_1_hardware_demo import (
     stop_at_obstacle,
     )
 
-from .obstacle_avoidance.run_DQN import (
+from .week_2.run_DQN import (
     run_qlearning_classification,
     QNetwork
     )
 
-from .obstacle_avoidance.run_PPO import (
+from .week_2.run_PPO import (
     run_ppo
     )
 
-from .obstacle_avoidance.run_DQN_hardware import (
+from .week_2.run_DQN_hardware import (
     rob_move,
     go_to_space
 )
 
-from .obstacle_avoidance.DQN_V2 import (
+from .week_2.DQN_V2 import (
     train_dqn_with_coppeliasim,
     run_dqn_with_coppeliasim
 )
