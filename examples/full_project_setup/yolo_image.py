@@ -2,13 +2,14 @@ from ultralytics import YOLO
 import cv2
 import torch
 import numpy as np
+import time
 
 # Check if GPU is available
 print("CUDA available:", torch.cuda.is_available())
 print("Device name:", torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CPU")
 
 # Load YOLO model
-model = YOLO("yolo11n.pt")
+model = YOLO("yolo11x.pt")
 
 # Helper function for green detection using color segmentation
 def detect_green_areas(frame):
@@ -26,16 +27,22 @@ frame = cv2.imread(image_path)
 if frame is None:
     print(f"Error: Could not read image {image_path}")
 else:
-    # Detect objects with YOLO
+    # Measure YOLO inference time
+    start_time = time.time()
     results = model.predict(source=image_path, device="cuda", save=False, verbose=False)
+    yolo_time = time.time() - start_time
+    print(f"YOLO inference time: {yolo_time:.4f} seconds")
 
     # Get bounding boxes from YOLO results
     yolo_boxes = results[0].boxes.xyxy.cpu().numpy()  # Bounding box coordinates
     yolo_scores = results[0].boxes.conf.cpu().numpy()  # Confidence scores
     yolo_classes = results[0].boxes.cls.cpu().numpy()  # Class indices
 
-    # Perform green detection
+    # Measure green detection time
+    start_time = time.time()
     contours, mask = detect_green_areas(frame)
+    green_detection_time = time.time() - start_time
+    print(f"Green detection time: {green_detection_time:.4f} seconds")
 
     # Draw YOLO bounding boxes filtered by green detection
     for box, score, cls in zip(yolo_boxes, yolo_scores, yolo_classes):
