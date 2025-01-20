@@ -24,7 +24,7 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # load the list of categories in the COCO dataset and then generate a
 # set of bounding box colors for each class
 CLASSES = pickle.loads(open(args["labels"], "rb").read())
-print('classes: ', CLASSES)
+# print('classes: ', CLASSES)
 COLORS = np.random.uniform(0, 255, size=(len(CLASSES), 3))
 # initialize a dictionary containing model name and its corresponding 
 # torchvision function call
