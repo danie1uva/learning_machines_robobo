@@ -3,7 +3,7 @@ import sys
 import torch 
 
 from robobo_interface import SimulationRobobo, HardwareRobobo
-from learning_machines import train_dqn_with_coppeliasim, rob_move, go_to_space, QNetwork, run_dqn_with_coppeliasim 
+from learning_machines import train_dqn_with_coppeliasim, rob_move, go_to_space, QNetwork, run_dqn_with_coppeliasim, run_all_actions
 
 
 if __name__ == "__main__":
@@ -35,5 +35,10 @@ if __name__ == "__main__":
     elif sys.argv[1] == "--hardcode":
         rob = HardwareRobobo(camera=True)
         go_to_space(rob)
+
+    elif sys.argv[1] == "--test_controls":
+        rob = HardwareRobobo(camera=True)
+        run_all_actions(rob)
+
     else:
         raise ValueError(f"{sys.argv[1]} is not a valid argument.")
