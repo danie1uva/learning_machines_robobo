@@ -1,6 +1,5 @@
 from .test_actions import (
     run_all_actions, 
-    test_irs
     )
 
 from .week_1_hardware_demo import (
@@ -26,6 +25,10 @@ from .DQN_V2 import (
     run_dqn_with_coppeliasim
 )
 
+from .foraging import (
+    forage 
+)
+
 __all__ = (
     "run_all_actions",
     "test_irs",
@@ -36,5 +39,6 @@ __all__ = (
     "QNetwork",
     "go_to_space",
     "train_dqn_with_coppeliasim",
-    "run_dqn_with_coppeliasim"
+    "run_dqn_with_coppeliasim",
+    "forage"
     )
