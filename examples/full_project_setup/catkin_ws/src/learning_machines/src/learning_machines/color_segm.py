@@ -80,8 +80,7 @@ for image_file in image_files:
 
     for contour in contours:
         (x, y, w, h) = cv2.boundingRect(contour)
-        if w * h > 500:
-            print(w*h)
+        if w * h > 5000:
             cv2.rectangle(orig, (x, y), (x + w, y + h), (0, 255, 0), 2)
             cv2.putText(orig, "Green Box", (x, y - 10),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
