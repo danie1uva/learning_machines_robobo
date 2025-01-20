@@ -3,7 +3,7 @@ import sys
 import torch 
 
 from robobo_interface import SimulationRobobo, HardwareRobobo
-from learning_machines import train_dqn_with_coppeliasim, rob_move, go_to_space, QNetwork
+from learning_machines import train_dqn_with_coppeliasim, rob_move, go_to_space, QNetwork, run_dqn_with_coppeliasim 
 
 
 if __name__ == "__main__":
@@ -21,7 +21,12 @@ if __name__ == "__main__":
         
     elif sys.argv[1] == "--simulation":
         rob = SimulationRobobo(identifier = 1) 
-        train_dqn_with_coppeliasim(rob) 
+        train_dqn_with_coppeliasim(rob)
+
+    elif sys.argv[1] == "--simulation_inf":
+        weights_path = "/root/catkin_ws/policy.pth" 
+        rob = SimulationRobobo() 
+        run_dqn_with_coppeliasim(rob, weights_path) 
 
     elif sys.argv[1] == "--debug":
         model = QNetwork()

@@ -24,6 +24,9 @@ WORKDIR /root/catkin_ws
 # This copies the local catkin_ws into the docker container.
 COPY ./catkin_ws .
 
+# Copy the pre-trained weights to the container
+# COPY ./policy.pth /root/catkin_ws/policy.pth 
+
 # Set up the envoirement to actually run the code
 COPY ./scripts/entrypoint.bash ./entrypoint.bash
 COPY ./scripts/setup.bash ./setup.bash

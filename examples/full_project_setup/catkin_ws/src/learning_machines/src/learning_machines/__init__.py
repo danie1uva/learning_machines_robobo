@@ -22,7 +22,8 @@ from .run_DQN_hardware import (
 )
 
 from .DQN_V2 import (
-    train_dqn_with_coppeliasim
+    train_dqn_with_coppeliasim,
+    run_dqn_with_coppeliasim
 )
 
 __all__ = (
@@ -35,4 +36,5 @@ __all__ = (
     "QNetwork",
     "go_to_space",
     "train_dqn_with_coppeliasim",
+    "run_dqn_with_coppeliasim"
     )

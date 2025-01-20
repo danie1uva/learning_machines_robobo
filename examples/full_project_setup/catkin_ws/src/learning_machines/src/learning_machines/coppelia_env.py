@@ -82,9 +82,20 @@ class CoppeliaSimEnv(gym.Env):
             yaw=self.init_ori.yaw
             )
 
-        if self.episode_count % 20 == 0:
-            random_int = random.randint(-90, 90)
-            orientation.pitch = random_int
+        if self.episode_count < 10000:
+            if self.episode_count % 20 == 0:
+                random_int = random.randint(-90, 90)
+                orientation.pitch = random_int
+        
+        elif self.episode_count < 15000 and self.episode_count >= 10000:
+            if self.episode_count % 10 == 0:
+                random_int = random.randint(-90, 90)
+                orientation.pitch = random_int
+                
+        elif self.episode_count >= 15000:
+            if self.episode_count % 5 == 0:
+                random_int = random.randint(-90, 90)
+                orientation.pitch = random_int
 
         self.rob.set_position(self.init_pos, orientation)
 
