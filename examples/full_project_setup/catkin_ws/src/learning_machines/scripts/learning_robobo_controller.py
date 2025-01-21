@@ -27,7 +27,7 @@ if __name__ == "__main__":
         rob_move(model, rob)
         
     elif sys.argv[1] == "--simulation":
-        rob = SimulationRobobo(identifier = 1) 
+        rob = SimulationRobobo() 
         train_dqn_with_coppeliasim(rob)
 
     elif sys.argv[1] == "--simulation_inf":
