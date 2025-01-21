@@ -95,7 +95,7 @@ def detect_box(rob, margin, debug=False):
     """
     width = rob.read_image_front().shape[1]
     center_of_frame = width // 2
-    center_margin = width * 0.15  # Middle 50% margin
+    center_margin = width * 0.10  # Middle 50% margin
 
     while True:
         image = take_picture(rob)
