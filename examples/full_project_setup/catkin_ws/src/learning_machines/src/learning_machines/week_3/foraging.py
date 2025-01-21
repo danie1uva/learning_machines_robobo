@@ -44,12 +44,36 @@ def process_irs(irs):
     return [irs[7], irs[2], irs[4], irs[3], irs[5]]
 
 
-def drive_straight(rob):
+def drive_straight(rob, margin, center_of_frame):
+    '''
+    Drives straight while continuously checking for green boxes.
+    Stops and pivots if no boxes are detected.
+    '''
     while True:
         sensors = process_irs(rob.read_irs())
         if max(sensors) >= 500:
             break
-        rob.move_blocking(100, 100, 250)
+
+        # Continuously check for green boxes
+        image = take_picture(rob)
+        detected_boxes = detect_green_areas(image)
+
+        if not detected_boxes:  # No green boxes detected
+            print("No boxes detected, pivoting...")
+            pivot(rob)
+            return
+
+        valid_boxes = [
+            box for box in detected_boxes
+            if center_of_frame - margin <= box[0] + box[2] / 2 <= center_of_frame + margin
+        ]
+
+        if not valid_boxes:  # No valid boxes in the middle region
+            print("No valid boxes detected, pivoting...")
+            pivot(rob)
+            return
+
+        rob.move_blocking(100, 100, 250)  # Continue moving forward
 
 
 def put_it_in_reverse_terry(rob):
@@ -111,7 +135,7 @@ def detect_box(rob, margin, debug=False):
                     target_box = detected_boxes[0]
                     box_center_x = target_box[0] + target_box[2] / 2
 
-                drive_straight(rob)
+                drive_straight(rob, margin, center_of_frame)
                 print("Box collected!")
                 return True
 
@@ -134,7 +158,7 @@ def forage(rob):
 
     set_tilt(rob, 100)
 
-    boxes = 7
+    boxes = 8
 
     while boxes > 0:
         bool = detect_box(rob, margin=100, debug=True)
