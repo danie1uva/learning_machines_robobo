@@ -47,7 +47,10 @@ class RobotNavigator:
         self.rob.move_blocking(-100, -100, 150)
         self.rob.move_blocking(100, -100, 100)
 
-    def plot_contours_and_margin(self, frame):
+    def plot_contours_and_sections(self, frame):
+        '''
+        given a frame, this function will plot the contours of the green areas + the vertical sections we move based on
+        '''
         sections = 7
         hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
         lower_green = np.array([40, 50, 50])
@@ -71,6 +74,9 @@ class RobotNavigator:
         return frame_copy
 
     def detect_green_areas(self, frame):
+        '''
+        given a frame, returns the coordinates of the green boxes visible
+        '''
         hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
         lower_green = np.array([40, 50, 50])
         upper_green = np.array([80, 255, 255])
@@ -86,15 +92,20 @@ class RobotNavigator:
 
     def save_image(self, image):
         current_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S_%f")
-        cv2.imwrite(str(FIGURES_DIR / f"contoured_image_{current_time}.png"), self.plot_contours_and_margin(image))
+        cv2.imwrite(str(FIGURES_DIR / f"contoured_image_{current_time}.png"), self.plot_contours_and_sections(image))
 
-    def map_box_to_section(self, box, width, sections=7):
+    def map_box_to_section(self, box, width):
+
+        sections=7
         x, _, w, _ = box
         section_width = width / sections
         overlaps = [(i, min(x + w, (i + 1) * section_width) - max(x, i * section_width)) for i in range(sections)]
         return max(overlaps, key=lambda item: item[1])[0]
 
     def pivot_to_box(self, box_coordinates, width):
+        '''
+        Given the coordinates of the boxes in view, this functiom will pivot the robot to face the closest box
+        '''
         closest_box = max(box_coordinates, key=lambda x: x[1])
         section = self.map_box_to_section(closest_box, width)
         movement = {
@@ -109,6 +120,12 @@ class RobotNavigator:
         self.rob.move_blocking(*movement)
 
     def detect_box(self):
+        '''
+        main logic. the robot first takes a picture. if there is no box in the frame
+        it pivots left or right and takes another picture. if there is a box/boxes in the frame,
+        the robot moves to face the closest box and drives straight until its collided 
+        '''
+
         counter = 0
         while True:
             counter += 1
@@ -129,7 +146,11 @@ class RobotNavigator:
 
                 self.drive_straight()
                 break
-
+            
+            # this may seem unnecessary but it is to avoid the scenario where the robot is stuck against
+            # a wall, but at an angle. it ensures the robot flattens against the wall. once the robot is flat against the wall,
+            # it will reverse and pivot in the opposite direction
+             
             if counter % 3 == 0:
                 self.pivot("left")
             else:
@@ -146,7 +167,7 @@ class RobotNavigator:
             self.rob.play_simulation()
 
         if self.hardware:
-            self.center_camera()
+            self.center_camera() # in sim the camera begins centered.
 
         self.set_tilt(100)
 
