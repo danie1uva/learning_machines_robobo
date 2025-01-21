@@ -109,32 +109,33 @@ def detect_box(rob, margin, debug=False):
             if debug:
                 save_debug_image(image, "detected_boxes")
 
-            # Process the closest box
+            # Choose the closest box
             target_box = detected_boxes[0]
             box_center_x = target_box[0] + target_box[2] / 2
 
-            # Determine pivot direction
-            if abs(box_center_x - center_of_frame) > margin:
-                turn_direction = "right" if box_center_x > center_of_frame else "left"
-                pivot(rob, direction=turn_direction)
+            # Determine pivot direction based on the box's position
+            if box_center_x < center_of_frame:  # Box is on the left
+                pivot(rob, direction="left")
+            elif box_center_x > center_of_frame:  # Box is on the right
+                pivot(rob, direction="right")
 
-            # Drive forward to collect the box
+            # Reassess box positioning and drive straight
             collected = drive_straight(rob, margin, center_of_frame)
             if collected:
                 print("Box collection confirmed.")
 
-                # Recheck for additional boxes
+                # Check for another box
                 image = take_picture(rob)
                 detected_boxes = detect_green_areas(image)
 
-                if detected_boxes:  # Another box detected
+                if detected_boxes:
                     print("Another box detected, continuing collection process.")
                     continue  # Restart processing the next box
 
                 return True  # Confirm the box is collected
 
-        # No boxes detected; pivot to search
-        pivot(rob, direction="right")  # Default pivot direction
+        # No boxes detected; pivot
+        pivot(rob, direction="right")  # Default pivot direction is right
         print("Searching for box...")
 
         sensors = rob.read_irs()
