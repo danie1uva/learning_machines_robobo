@@ -1,5 +1,6 @@
 import cv2
 from datetime import datetime
+from pathlib import Path
 from data_files import FIGURES_DIR
 from robobo_interface import IRobobo
 import numpy as np
@@ -29,6 +30,14 @@ def pivot(rob: IRobobo):
     rob.move_blocking(50, -25, 100)
 
 
+def save_debug_image(image, name):
+    """Save image for debugging purposes."""
+    Path(FIGURES_DIR).mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    filepath = FIGURES_DIR / f"{name}_{timestamp}.png"
+    cv2.imwrite(str(filepath), image)
+
+
 def check_centering(width, list_of_coords, margin=50):
     center_of_frame = width / 2
     left_margin = center_of_frame - margin
@@ -45,32 +54,30 @@ def process_irs(irs):
 
 
 def drive_straight(rob, margin, center_of_frame):
-    '''
+    """
     Drives straight while continuously checking for green boxes.
-    Stops and pivots if no boxes are detected.
-    '''
+    Stops if the package is no longer in the frame.
+    """
     while True:
         sensors = process_irs(rob.read_irs())
         if max(sensors) >= 500:
             break
 
-        # Continuously check for green boxes
         image = take_picture(rob)
         detected_boxes = detect_green_areas(image)
 
         if not detected_boxes:  # No green boxes detected
-            print("No boxes detected, pivoting...")
-            pivot(rob)
-            return
+            print("Package successfully collected!")
+            return  # Stop driving forward
 
+        # Check for a valid box in the middle region
         valid_boxes = [
             box for box in detected_boxes
             if center_of_frame - margin <= box[0] + box[2] / 2 <= center_of_frame + margin
         ]
 
-        if not valid_boxes:  # No valid boxes in the middle region
-            print("No valid boxes detected, pivoting...")
-            pivot(rob)
+        if not valid_boxes:  # No valid boxes detected
+            print("No valid boxes in the middle region, stopping forward motion.")
             return
 
         rob.move_blocking(100, 100, 250)  # Continue moving forward
@@ -82,9 +89,9 @@ def put_it_in_reverse_terry(rob):
 
 
 def detect_green_areas(frame):
-    '''
+    """
     Returns detected green boxes as bounding boxes.
-    '''
+    """
     hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
     lower_green = np.array([40, 50, 50])
     upper_green = np.array([80, 255, 255])
@@ -100,9 +107,9 @@ def detect_green_areas(frame):
 
 
 def detect_box(rob, margin, debug=False):
-    '''
+    """
     Detects a green box in the frame and drives towards it.
-    '''
+    """
     width = rob.read_image_front().shape[1]
     center_of_frame = width // 2
     center_margin = width * 0.15  # Middle 50% margin
@@ -114,6 +121,10 @@ def detect_box(rob, margin, debug=False):
         if detected_boxes:
             # Sort boxes: closest in y-axis first, then closest to the center
             detected_boxes.sort(key=lambda b: (b[1], abs((b[0] + b[2] / 2) - center_of_frame)))
+
+            # Save the image with detected boxes
+            if debug:
+                save_debug_image(image, "detected_boxes")
 
             # Filter boxes in the middle 50% of the frame
             valid_boxes = [
@@ -129,16 +140,23 @@ def detect_box(rob, margin, debug=False):
                 while abs(box_center_x - center_of_frame) > margin:
                     turn_direction = 50 if box_center_x > center_of_frame else -50
                     rob.move_blocking(turn_direction, -turn_direction, 100)
+
+                    # Update the image and target box
                     image = take_picture(rob)
                     detected_boxes = detect_green_areas(image)
                     detected_boxes.sort(key=lambda b: (b[1], abs((b[0] + b[2] / 2) - center_of_frame)))
+
+                    if not detected_boxes:  # No boxes after turn
+                        break
+
                     target_box = detected_boxes[0]
                     box_center_x = target_box[0] + target_box[2] / 2
 
+                # Drive forward until the package is confirmed as removed
                 drive_straight(rob, margin, center_of_frame)
-                print("Box collected!")
                 return True
 
+        # No boxes detected; pivot
         pivot(rob)
         print("Searching for box...")
 
