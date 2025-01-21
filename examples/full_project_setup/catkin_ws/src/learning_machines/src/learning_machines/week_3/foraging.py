@@ -42,13 +42,16 @@ def drive_straight(rob):
         sensors = process_irs(rob.read_irs())
         if max(sensors) >= 500:
             break
-        rob.move_blocking(100, 100, 100)
+        rob.move_blocking(100, 100, 500)
 
 def put_it_in_reverse_terry(rob):
     rob.move_blocking(-100, -100, 100)
     rob.move_blocking(50, 0, 100)
 
 def detect_green_areas(frame, margin, width):
+    '''
+    Returns true if a green box is detected within margin of center of frame
+    '''
     hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
     lower_green = np.array([40, 50, 50])
     upper_green = np.array([80, 255, 255])
@@ -64,6 +67,9 @@ def detect_green_areas(frame, margin, width):
     return False
 
 def plot_contours_and_margin(frame, margin=100):
+    '''
+    Returns a frame with contours and margins plotted
+    '''
     hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
     lower_green = np.array([40, 50, 50])
     upper_green = np.array([80, 255, 255])
@@ -78,10 +84,12 @@ def plot_contours_and_margin(frame, margin=100):
         cv2.rectangle(frame_copy, (x, y), (x + w, y + h), (0, 255, 0), 2)
     return frame_copy
 
-def detect_box(rob, margin, debug=False, max_attempts=50):
+def detect_box(rob, margin, debug=False):
+    '''
+    Detects a green box in the frame and drives towards it. If no box is in front of robot, it pivots slightly and repeats.
+    '''
     width = rob.read_image_front().shape[1]
-    attempts = 0
-    while attempts < max_attempts:
+    while True: 
         image = take_picture(rob)
         if detect_green_areas(image, margin, width):
 
@@ -90,31 +98,35 @@ def detect_box(rob, margin, debug=False, max_attempts=50):
                 cv2.imwrite(str(FIGURES_DIR / f"contoured_image_{current_time}.png"), plot_contours_and_margin(image))
 
             drive_straight(rob)
-            return
+            print("Box collected!")
+            break 
         
         pivot(rob)
+        print("Searching for box...")
 
-        attempts += 1
         sensors = rob.read_irs()
         front_sensors = process_irs(sensors)
         if min(front_sensors) > 50:
+            print("Back it up now y'all")
             put_it_in_reverse_terry(rob)
-    print("No box detected after maximum attempts. Exiting search.")
 
 def forage(rob):
+
     if isinstance(rob, SimulationRobobo):
         rob.play_simulation()
 
     if isinstance(rob, HardwareRobobo):
-        set_pan(rob, 123)
+        set_pan(rob, 123) # in sim, camera starts centered
 
     set_tilt(rob, 100)
 
-    counter = 0
-    while counter < 50:
+    boxes = 7
 
-        detect_box(rob, margin=100, debug=True, max_attempts=50)
-        counter += 1
+    while boxes > 0:    
+        bool = detect_box(rob, margin=100, debug=True)
+        if bool:
+            boxes -= 1
+            print(f"Boxes left: {boxes}")
 
     if isinstance(rob, SimulationRobobo):
         rob.stop_simulation()
