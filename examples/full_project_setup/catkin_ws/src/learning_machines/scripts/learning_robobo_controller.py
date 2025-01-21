@@ -9,7 +9,7 @@ from learning_machines import (train_dqn_with_coppeliasim,
                                QNetwork, 
                                run_dqn_with_coppeliasim, 
                                run_all_actions,
-                               forage 
+                               RobotNavigator,
 )
 
 
@@ -49,11 +49,11 @@ if __name__ == "__main__":
 
     elif sys.argv[1] == "--forage" and sys.argv[2] == "--simulation":
         rob = SimulationRobobo()
-        forage(rob)
+        RobotNavigator(rob, debug = True).forage() 
 
     elif sys.argv[1] == "--forage" and sys.argv[2] == "--hardware":
         rob = HardwareRobobo(camera=True)
-        forage(rob)
+        RobotNavigator(rob, debug = False).forage() 
 
     else:
         raise ValueError(f"{sys.argv[1]} is not a valid argument.")

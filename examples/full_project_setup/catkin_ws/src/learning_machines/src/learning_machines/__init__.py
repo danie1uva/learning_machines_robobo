@@ -26,7 +26,7 @@ from .week_2.DQN_V2 import (
 )
 
 from .week_3.foraging import (
-    forage 
+    RobotNavigator 
 )
 
 __all__ = (
@@ -40,5 +40,5 @@ __all__ = (
     "go_to_space",
     "train_dqn_with_coppeliasim",
     "run_dqn_with_coppeliasim",
-    "forage"
+    "RobotNavigator"
     )
