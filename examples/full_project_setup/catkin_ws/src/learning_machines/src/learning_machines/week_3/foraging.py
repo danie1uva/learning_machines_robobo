@@ -63,16 +63,6 @@ def drive_straight(rob, margin, center_of_frame):
             print("Package successfully collected!")
             return True  # Confirm package is collected
 
-        # Check for a valid box in the middle region
-        valid_boxes = [
-            box for box in detected_boxes
-            if center_of_frame - margin <= box[0] + box[2] / 2 <= center_of_frame + margin
-        ]
-
-        if not valid_boxes:  # No valid boxes detected
-            print("No valid boxes in the middle region, stopping forward motion.")
-            return False
-
         rob.move_blocking(100, 100, 250)  # Continue moving forward
 
 
@@ -148,6 +138,15 @@ def detect_box(rob, margin, debug=False):
                 collected = drive_straight(rob, margin, center_of_frame)
                 if collected:
                     print("Box collection confirmed.")
+
+                    # Check if another box is present after collection
+                    image = take_picture(rob)
+                    detected_boxes = detect_green_areas(image)
+
+                    if detected_boxes:  # Another box detected
+                        print("Another box detected, continuing collection process.")
+                        continue  # Restart processing the next box
+
                     return True  # Confirm the box is collected
 
         # No boxes detected; pivot
