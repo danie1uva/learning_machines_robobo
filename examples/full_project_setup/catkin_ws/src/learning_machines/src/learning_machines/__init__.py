@@ -29,6 +29,11 @@ from .week_3.foraging import (
     RobotNavigator 
 )
 
+from .week_3.forage_DQN import (
+    train_dqn_forage,
+    run_dqn_forage
+)
+
 __all__ = (
     "run_all_actions",
     "test_irs",
@@ -40,5 +45,7 @@ __all__ = (
     "go_to_space",
     "train_dqn_with_coppeliasim",
     "run_dqn_with_coppeliasim",
-    "RobotNavigator"
+    "RobotNavigator",
+    "train_dqn_forage",
+    "run_dqn_forage"
     )

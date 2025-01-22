@@ -39,20 +39,35 @@ class RobotNavigator:
     def process_irs(self, irs):
         return [irs[7], irs[2], irs[4], irs[3], irs[5]]
 
+    def check_robot_centered(self, coords, width):
+        closest_box = max(coords, key=lambda x: x[1])
+        section = self.map_box_to_section(closest_box, width)
+        return section == 3
+    
     def drive_straight(self):
-        while True:
+
+        image = self.take_picture()
+        coords = self.detect_green_areas(image)
+        target_box_centered = self.check_robot_centered(coords, image.shape[1])
+
+        while target_box_centered:
             last_sensors = self.process_irs(self.rob.read_irs())
 
             if max(last_sensors) >= 500:
                 break
             
-            image = self.take_picture()
-            coords = self.detect_green_areas(image) # this is false when there are no green areas in view
+            if self.sim:
+                self.rob.move_blocking(100, 100, 750)
+            if self.hardware:
+                self.rob.move_blocking(100, 100, 1000)
 
-            self.rob.move_blocking(100, 100, 750)
             new_sensors = self.process_irs(self.rob.read_irs())
             if max(new_sensors) < max(last_sensors) or not coords:
                 break
+            
+            image = self.take_picture()
+            coords = self.detect_green_areas(image)
+            target_box_centered = self.check_robot_centered(coords, image.shape[1])
 
 
     def reverse(self):
@@ -87,10 +102,12 @@ class RobotNavigator:
             cv2.line(frame_copy, (x, 0), (x, height), (0, 0, 0), 1)
             label_x = x + section_width // 2
             cv2.putText(frame_copy, str(i), (label_x, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 2)
+        threshold = 1000
 
         for contour in contours:
             x, y, w, h = cv2.boundingRect(contour)
-            cv2.rectangle(frame_copy, (x, y), (x + w, y + h), (0, 255, 0), 2)
+            if w * h > threshold:
+                cv2.rectangle(frame_copy, (x, y), (x + w, y + h), (0, 255, 0), 2)
 
         return frame_copy
 
@@ -112,7 +129,7 @@ class RobotNavigator:
         for contour in contours:
             x, y, w, h = cv2.boundingRect(contour)
             sim_threshold = 1000
-            hardware_threshold = 2500
+            hardware_threshold = 1000 
             threshold = sim_threshold if self.sim else hardware_threshold
             if w * h > threshold:
                 coordinates_boxes.append((x, y, w, h))
@@ -155,7 +172,6 @@ class RobotNavigator:
             5: (100, 0, 190),
             6: (100, 0, 250) 
         }
-        print(section)
         movement = movement_hardware[section] if self.hardware else movement_sim[section]
         self.rob.move_blocking(*movement)
 
@@ -209,30 +225,32 @@ class RobotNavigator:
         if self.hardware:
             self.center_camera() # in sim the camera begins centered.
 
-        self.set_tilt(105)
+        self.set_tilt(100)
 
-        while True:
+        counter = 0
+        while counter < 30:
             self.detect_box()
+            counter += 1
 
-    def calibrate(self):
-        if self.hardware:
-            self.set_pan(123)
+    # def calibrate(self):
+    #     if self.hardware:
+    #         self.set_pan(123)
         
-        self.set_tilt(105)
-        print("tilt done") 
-        self.rob.sleep(1)
-        init_image = self.take_picture() # take picture of starting point
-        print("image taken")
-        self.save_image(init_image) # save the image
-        coords = self.detect_green_areas(init_image) # detect the green areas
-        self.pivot_to_box(coords, init_image.shape[1]) # pivot to the closest green area
-        print("pivoted")
-        self.rob.sleep(1)
-        post_image = self.take_picture()
-        self.save_image(post_image)
-        coords = self.detect_green_areas(post_image)
-        self.pivot_to_box(coords, post_image.shape[1])
-        print("calibration done")
+    #     self.set_tilt(105)
+    #     print("tilt done") 
+    #     self.rob.sleep(1)
+    #     init_image = self.take_picture() # take picture of starting point
+    #     print("image taken")
+    #     self.save_image(init_image) # save the image
+    #     coords = self.detect_green_areas(init_image) # detect the green areas
+    #     self.pivot_to_box(coords, init_image.shape[1]) # pivot to the closest green area
+    #     print("pivoted")
+    #     self.rob.sleep(1)
+    #     post_image = self.take_picture()
+    #     self.save_image(post_image)
+    #     coords = self.detect_green_areas(post_image)
+    #     self.pivot_to_box(coords, post_image.shape[1])
+    #     print("calibration done")
 
-        print('reached')
+    #     print('reached')
         

@@ -11,6 +11,8 @@ from learning_machines import (run_all_actions,
                                run_dqn_with_coppeliasim, 
                                run_all_actions,
                                RobotNavigator,
+                               train_dqn_forage,
+                               run_dqn_forage
 )
 
 
@@ -26,8 +28,8 @@ if __name__ == "__main__":
         run_all_actions(rob)
         
     elif sys.argv[1] == "--simulation":
-        rob = SimulationRobobo(identifier = 1) 
-        train_dqn_with_coppeliasim(rob)
+        rob = SimulationRobobo() 
+        run_all_actions(rob)
 
     elif sys.argv[1] == "--simulation_inf":
         weights_path = "/root/catkin_ws/policy.pth" 
@@ -48,11 +50,15 @@ if __name__ == "__main__":
 
     elif sys.argv[1] == "--forage" and sys.argv[2] == "--simulation":
         rob = SimulationRobobo()
-        RobotNavigator(rob, debug = True).forage() 
+        RobotNavigator(rob).forage() 
 
     elif sys.argv[1] == "--forage" and sys.argv[2] == "--hardware":
         rob = HardwareRobobo(camera=True)
-        RobotNavigator(rob).forage() 
+        RobotNavigator(rob, debug=True).forage() 
 
+    elif sys.argv[1] == "--train_forage":
+        rob = SimulationRobobo()
+        train_dqn_forage(rob)
+        
     else:
         raise ValueError(f"{sys.argv[1]} is not a valid argument.")
