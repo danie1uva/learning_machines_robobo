@@ -83,26 +83,20 @@ def test_hardware(rob: HardwareRobobo):
 
 
 def run_all_actions(rob: IRobobo):
-    # if isinstance(rob, SimulationRobobo):
-    #     rob.play_simulation()
-    # test_emotions(rob)
-    # test_sensors(rob)
-    # test_move_and_wheel_reset(rob)
-    # if isinstance(rob, SimulationRobobo):
-    #     test_sim(rob)
+    if isinstance(rob, SimulationRobobo):
+        rob.play_simulation()
+    test_emotions(rob)
+    test_sensors(rob)
+    test_move_and_wheel_reset(rob)
+    if isinstance(rob, SimulationRobobo):
+        test_sim(rob)
 
-    # if isinstance(rob, HardwareRobobo):
-    #     test_hardware(rob)
+    if isinstance(rob, HardwareRobobo):
+        test_hardware(rob)
 
-    # test_phone_movement(rob)
-    # print("IRS data: ", rob.read_irs())
+    test_phone_movement(rob)
+    print("IRS data: ", rob.read_irs())
 
-    # if isinstance(rob, SimulationRobobo):
-    #     rob.stop_simulation()
+    if isinstance(rob, SimulationRobobo):
+        rob.stop_simulation()
 
-    center_camera(rob)
-    for pan in [0, 45, 90, 135, 180]:
-        rob.set_phone_pan_blocking(pan, 100)
-    for tilt in [26, 50, 75, 105]:
-        set_tilt(rob, tilt)
-        take_picture(rob)

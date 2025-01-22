@@ -3,7 +3,8 @@ import sys
 import torch 
 
 from robobo_interface import SimulationRobobo, HardwareRobobo
-from learning_machines import (train_dqn_with_coppeliasim, 
+from learning_machines import (run_all_actions,
+                               train_dqn_with_coppeliasim, 
                                rob_move, 
                                go_to_space, 
                                QNetwork, 
@@ -22,9 +23,7 @@ if __name__ == "__main__":
         )
     elif sys.argv[1] == "--hardware":
         rob = HardwareRobobo(camera=True)
-        model = QNetwork()
-        model.load_state_dict(torch.load("model.pth"))
-        rob_move(model, rob)
+        run_all_actions(rob)
         
     elif sys.argv[1] == "--simulation":
         rob = SimulationRobobo(identifier = 1) 
@@ -53,7 +52,7 @@ if __name__ == "__main__":
 
     elif sys.argv[1] == "--forage" and sys.argv[2] == "--hardware":
         rob = HardwareRobobo(camera=True)
-        RobotNavigator(rob, debug = False).forage() 
+        RobotNavigator(rob).forage() 
 
     else:
         raise ValueError(f"{sys.argv[1]} is not a valid argument.")
