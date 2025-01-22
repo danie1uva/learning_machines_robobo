@@ -29,9 +29,9 @@ def set_tilt(rob: IRobobo, tilt: int):
 def pivot(rob: IRobobo, direction: str):
     """Pivot the robot left or right."""
     if direction == "right":
-        rob.move_blocking(50, -25, 100)
+        rob.move_blocking(50, -25, 150)
     elif direction == "left":
-        rob.move_blocking(-25, 50, 100)
+        rob.move_blocking(-25, 50, 150)
 
 
 def save_debug_image(image, name):
@@ -63,12 +63,12 @@ def drive_straight(rob, margin, center_of_frame):
             print("Package successfully collected!")
             return True  # Confirm package is collected
 
-        rob.move_blocking(100, 100, 250)  # Continue moving forward
+        rob.move_blocking(100, 100, 450)  # Continue moving forward
 
 
 def put_it_in_reverse_terry(rob):
-    rob.move_blocking(-100, -100, 100)
-    rob.move_blocking(50, 0, 100)
+    rob.move_blocking(-100, -100, 200)
+    rob.move_blocking(50, -30, 100)
 
 
 def detect_green_areas(frame):
