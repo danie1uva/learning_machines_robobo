@@ -2,6 +2,7 @@
 import gym
 import numpy as np
 import cv2
+import time
 from gym import spaces
 from robobo_interface import IRobobo
 from robobo_interface import (
@@ -16,7 +17,7 @@ class ForagingEnv(gym.Env):
     def __init__(self, rob: IRobobo):
         super().__init__()
         self.rob = rob
-        self.action_space = spaces.Discrete(5)  # Same action space as before
+        self.action_space = spaces.Discrete(5)
         self.observation_space = spaces.Dict({
             'image': spaces.Box(low=0, high=255, shape=(64, 64, 3), dtype=np.uint8),
             'irs': spaces.Box(low=0, high=1, shape=(5,), dtype=np.float32)
@@ -26,11 +27,13 @@ class ForagingEnv(gym.Env):
         self.package_count = 0
         self.max_steps = 500
         self.current_step = 0
+        self.episode_start_time = None
 
     def reset(self):
         """Reset environment for new episode"""
         self.current_step = 0
         self.package_count = 0
+        self.episode_start_time = time.time()
         
         if self.episode_count % 50 == 0:
             self.rob.stop_simulation()
@@ -73,7 +76,12 @@ class ForagingEnv(gym.Env):
         # Check for done condition
         done |= self._check_collision(obs['irs'])
         
-        return obs, reward, done, {}
+        info = {
+            "episode_duration": time.time() - self.episode_start_time,
+            "total_packages": self.package_count
+        }
+        
+        return obs, reward, done, info
 
     def _take_action(self, action):
         """Map action index to movement"""
