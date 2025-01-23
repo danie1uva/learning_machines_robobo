@@ -41,17 +41,17 @@ class WandbLoggingCallback(BaseCallback):
 hyperparams = {
     "algo": "DQN",
     "environment": "CoppeliaSimEnv",
-    "learning_rate": 2e-3,
-    "buffer_size": 20000,
-    "learning_starts": 500,
-    "batch_size": 64,
-    "gamma": 0.90,
-    "train_freq": 4,
-    "target_update_interval": 500,
-    "exploration_fraction": 0.2,
-    "exploration_final_eps": 0.05,
-    "total_timesteps": 20000,
-    "num_initial_boxes": 7,        # Example number of boxes
+    "learning_rate": 1e-3,          # Reduced to stabilize learning
+    "buffer_size": 10000,           # Reduced to match smaller training window
+    "learning_starts": 500,         # Keep same; ensures initial exploration
+    "batch_size": 64,               # No change; balances memory usage and stability
+    "gamma": 0.95,                  # Slightly increased for better long-term reward estimation
+    "train_freq": 4,                # More frequent updates to align training with stabilization
+    "target_update_interval": 500, # Increase for smoother target network updates
+    "exploration_fraction": 0.1,    # Reduce exploration period to reflect faster convergence
+    "exploration_final_eps": 0.02,  # Reduce final exploration for better exploitation
+    "total_timesteps": 15000,       # Reduced to match stabilization window
+    "num_initial_boxes": 7,         # Same; depends on task complexity
     "run_date": datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 }
 
@@ -115,7 +115,7 @@ def run_dqn_forage(rob: IRobobo, model_weights_path: str):
         config=hyperparams,
         name=f"run_{hyperparams['run_date']}" 
     )
-    
+
     while True: 
         rob.play_simulation()
         env = CoppeliaSimEnv(rob, num_initial_boxes=wandb.config.num_initial_boxes)

@@ -83,13 +83,22 @@ class CoppeliaSimEnv(gym.Env):
             yaw=self.init_ori.yaw
         )
 
-        if self.step_count < 10000:
+        if self.step_count < 2500:  # First 25% of training
             if self.episode_count % 20 == 0:
-                orientation.pitch = random.randint(-90, 90)
-        
-        else:
+                orientation.pitch = random.randint(-45, 45)  # Smaller perturbations early on
+
+        elif self.step_count < 5000:  # 25-50% of training
             if self.episode_count % 10 == 0:
-                orientation.pitch = random.randint(-90, 90)
+                orientation.pitch = random.randint(-60, 60)  # Gradually increasing range
+
+        elif self.step_count < 7500:  # 50-75% of training
+            if self.episode_count % 5 == 0:
+                orientation.pitch = random.randint(-90, 90)  # Full range perturbations begin
+
+        else:  # Final 25% of training
+            if self.episode_count % 2 == 0:
+                orientation.pitch = random.randint(-90, 90)  # Frequent perturbations
+
 
         self.rob.set_position(self.init_pos, orientation)
 
