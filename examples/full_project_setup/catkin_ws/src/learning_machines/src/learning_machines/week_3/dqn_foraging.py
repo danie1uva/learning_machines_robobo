@@ -4,15 +4,14 @@ import torch
 import numpy as np
 import time
 from torch import nn
-from torch.utils.data import DataLoader
 from collections import deque
 import random
 from robobo_interface import IRobobo
 from .foraging_env import ForagingEnv
 
 class DQN(nn.Module):
-    """Deep Q-Network with CNN for image processing"""
-    def __init__(self, input_shape, n_actions):
+    """Deep Q-Network with 6 output actions"""
+    def __init__(self, input_shape, n_actions=6):  # Updated for 6 actions
         super().__init__()
         self.cnn = nn.Sequential(
             nn.Conv2d(3, 32, 8, stride=4),
@@ -54,50 +53,46 @@ class ReplayBuffer:
         return len(self.buffer)
 
 def train_dqn_foraging(rob: IRobobo):
-    """Training loop for foraging task"""
-    # Initialize W&B with adjusted parameters
+    """Training loop with proper package tracking"""
     wandb.init(
         project="robobo-foraging",
         config={
             "learning_rate": 1e-4,
             "batch_size": 32,
             "gamma": 0.99,
-            "epsilon_decay": 0.998,  # Slower decay
-            "min_epsilon": 0.01,
-            "eps_decay_steps": 20000  # Decay over steps instead of episodes
+            "epsilon_decay": 0.999,  # Slower decay
+            "min_epsilon": 0.1,
+            "eps_decay_steps": 30000  # Slower decay over more steps
         }
     )
     
-    # Initialize environment and models
     env = ForagingEnv(rob)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
-    model = DQN(input_shape=(3, 64, 64), n_actions=5).to(device)
-    target_model = DQN(input_shape=(3, 64, 64), n_actions=5).to(device)
+    model = DQN(input_shape=(3, 64, 64)).to(device)
+    target_model = DQN(input_shape=(3, 64, 64)).to(device)
     target_model.load_state_dict(model.state_dict())
     
     optimizer = torch.optim.Adam(model.parameters(), lr=wandb.config.learning_rate)
     replay_buffer = ReplayBuffer(50000)
     
-    # Training parameters
     total_steps = 0
     epsilon = 1.0
     episode = 0
     
-    # Training loop
     while True:
         state = env.reset()
         episode_reward = 0
         done = False
-        steps_in_episode = 0
         
         while not done:
-            steps_in_episode += 1
             total_steps += 1
             
-            # Adjusted epsilon decay
-            epsilon = max(wandb.config.min_epsilon, 
-                        1.0 - (total_steps / wandb.config.eps_decay_steps))
+            # Epsilon decay
+            epsilon = max(
+                wandb.config.min_epsilon,
+                1.0 - (total_steps / wandb.config.eps_decay_steps)
+            )
             
             # Epsilon-greedy action selection
             if random.random() < epsilon:
@@ -109,40 +104,68 @@ def train_dqn_foraging(rob: IRobobo):
                     q_values = model(image_tensor, irs_tensor)
                     action = q_values.argmax().item()
             
-            # Take action
+            # Execute action
             next_state, reward, done, info = env.step(action)
             episode_reward += reward
             
-            # Store transition
+            # Store experience
             replay_buffer.add(state, action, reward, next_state, done)
             
-            # Train model (keep existing training code)
-            # ... [existing training code] ...
+            # Train model
+            if len(replay_buffer) >= wandb.config.batch_size:
+                batch = replay_buffer.sample(wandb.config.batch_size)
+                
+                # Convert batch to tensors
+                state_images = torch.stack([torch.FloatTensor(s['image']).permute(2, 0, 1) for s, _, _, _, _ in batch]).to(device)
+                state_irs = torch.stack([torch.FloatTensor(s['irs']) for s, _, _, _, _ in batch]).to(device)
+                actions = torch.LongTensor([a for _, a, _, _, _ in batch]).to(device)
+                rewards = torch.FloatTensor([r for _, _, r, _, _ in batch]).to(device)
+                next_state_images = torch.stack([torch.FloatTensor(ns['image']).permute(2, 0, 1) for _, _, _, ns, _ in batch]).to(device)
+                next_state_irs = torch.stack([torch.FloatTensor(ns['irs']) for _, _, _, ns, _ in batch]).to(device)
+                dones = torch.FloatTensor([d for _, _, _, _, d in batch]).to(device)
+                
+                # Calculate target Q-values
+                with torch.no_grad():
+                    next_q = target_model(next_state_images, next_state_irs).max(1)[0]
+                    target_q = rewards + (1 - dones) * wandb.config.gamma * next_q
+                
+                # Calculate current Q-values
+                current_q = model(state_images, state_irs).gather(1, actions.unsqueeze(1))
+                
+                # Compute loss
+                loss = nn.MSELoss()(current_q.squeeze(), target_q)
+                
+                # Optimize model
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+                
+                wandb.log({"training_loss": loss.item()})
             
-            # Update target network periodically
+            # Update target network
             if total_steps % 1000 == 0:
                 target_model.load_state_dict(model.state_dict())
-                print(f"Updated target network at step {total_steps}")
+                print(f"🔁 Target network updated at step {total_steps}")
             
             state = next_state
 
-        # Episode summary
+        # Log episode metrics
         duration = time.time() - env.episode_start_time
-        print(f"\nEpisode {episode} completed in {duration:.1f}s")
-        print(f"Total steps: {total_steps}")
-        print(f"Packages collected: {env.total_packages}")
-        print(f"Epsilon: {epsilon:.3f}")
-        print(f"Average reward per step: {episode_reward/steps_in_episode:.2f}\n")
-        
-        # Log metrics
         wandb.log({
             "episode": episode,
             "total_steps": total_steps,
             "epsilon": epsilon,
             "episode_reward": episode_reward,
-            "packages_collected": env.total_packages,
+            "packages_collected": env.total_packages_collected,
             "episode_duration": duration,
-            "average_reward_per_step": episode_reward/steps_in_episode
+            "average_reward_per_step": episode_reward/(total_steps if total_steps > 0 else 1)
         })
+        
+        print(f"\nEpisode {episode} Summary:")
+        print(f"Duration: {duration:.1f}s")
+        print(f"Total steps: {total_steps}")
+        print(f"Packages collected: {env.total_packages_collected}")
+        print(f"Epsilon: {epsilon:.3f}")
+        print(f"Average reward: {episode_reward/(total_steps if total_steps > 0 else 1):.2f}\n")
         
         episode += 1
