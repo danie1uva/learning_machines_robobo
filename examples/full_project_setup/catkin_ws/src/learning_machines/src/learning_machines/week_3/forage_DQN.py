@@ -3,6 +3,7 @@ import gym
 import torch
 import numpy as np
 from datetime import datetime
+import time 
 
 from stable_baselines3 import DQN
 from stable_baselines3.dqn.policies import MlpPolicy
@@ -114,41 +115,38 @@ def run_dqn_forage(rob: IRobobo, model_weights_path: str):
         config=hyperparams,
         name=f"run_{hyperparams['run_date']}" 
     )
+    
+    while True: 
+        rob.play_simulation()
+        env = CoppeliaSimEnv(rob, num_initial_boxes=wandb.config.num_initial_boxes)
 
-    # Create the environment
-    env = CoppeliaSimEnv(rob, num_initial_boxes=wandb.config.num_initial_boxes)
+        # Build a model shell to load weights into
+        model = DQN(
+            policy=MlpPolicy,
+            env=env,
+            learning_rate=wandb.config.learning_rate,
+            buffer_size=wandb.config.buffer_size,
+            learning_starts=wandb.config.learning_starts,
+            batch_size=wandb.config.batch_size,
+            gamma=wandb.config.gamma,
+            train_freq=wandb.config.train_freq,
+            target_update_interval=wandb.config.target_update_interval,
+            exploration_fraction=wandb.config.exploration_fraction,
+            exploration_final_eps=wandb.config.exploration_final_eps,
+            verbose=1
+        )
 
-    # Build a model shell to load weights into
-    model = DQN(
-        policy=MlpPolicy,
-        env=env,
-        learning_rate=wandb.config.learning_rate,
-        buffer_size=wandb.config.buffer_size,
-        learning_starts=wandb.config.learning_starts,
-        batch_size=wandb.config.batch_size,
-        gamma=wandb.config.gamma,
-        train_freq=wandb.config.train_freq,
-        target_update_interval=wandb.config.target_update_interval,
-        exploration_fraction=wandb.config.exploration_fraction,
-        exploration_final_eps=wandb.config.exploration_final_eps,
-        verbose=1
-    )
+        # Load the trained weights (PyTorch state_dict or SB3 .zip file)
+        # If loading a stable_baselines3 .zip model:
+        #   model = DQN.load(model_weights_path, env=env)
+        # If loading only the policy state_dict:
+        model.policy.load_state_dict(torch.load(model_weights_path, map_location=torch.device("cpu")))
 
-    # Load the trained weights (PyTorch state_dict or SB3 .zip file)
-    # If loading a stable_baselines3 .zip model:
-    #   model = DQN.load(model_weights_path, env=env)
-    # If loading only the policy state_dict:
-    model.policy.load_state_dict(torch.load(model_weights_path, map_location=torch.device("cpu")))
+        obs = env.reset()
+        done = False
+        while not done:
+            action, _states = model.predict(obs)
+            obs, reward, done, info = env.step(action)
+        
+        rob.stop_simulation()
 
-    rob.play_simulation()
-
-    obs = env.reset()
-    done = False
-
-    while not done:
-        action, _states = model.predict(obs)
-        obs, reward, done, info = env.step(action)
-
-    rob.stop_simulation()
-
-    print("Simulation complete. Final reward:", reward)

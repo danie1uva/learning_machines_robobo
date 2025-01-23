@@ -59,6 +59,11 @@ if __name__ == "__main__":
     elif sys.argv[1] == "--train_forage":
         rob = SimulationRobobo()
         train_dqn_forage(rob)
-        
+
+    elif sys.argv[1] == "--run_forage":
+        weights_path = "/root/catkin_ws/policy.pth" 
+        rob = SimulationRobobo()
+        run_dqn_forage(rob, weights_path)
+
     else:
         raise ValueError(f"{sys.argv[1]} is not a valid argument.")
