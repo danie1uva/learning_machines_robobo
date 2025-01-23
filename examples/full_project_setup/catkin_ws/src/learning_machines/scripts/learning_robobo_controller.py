@@ -47,13 +47,22 @@ if __name__ == "__main__":
         rob = HardwareRobobo(camera=True)
         run_all_actions(rob)
 
-    elif sys.argv[1] == "--forage" and sys.argv[2] == "--simulation":
-        rob = SimulationRobobo()
-        forage(rob)
+    # elif sys.argv[1] == "--forage" and sys.argv[2] == "--simulation":
+    #     rob = SimulationRobobo()
+    #     forage(rob)
 
-    elif sys.argv[1] == "--forage" and sys.argv[2] == "--hardware":
-        rob = HardwareRobobo(camera=True)
-        forage(rob)
+    # elif sys.argv[1] == "--forage" and sys.argv[2] == "--hardware":
+    #     rob = HardwareRobobo(camera=True)
+    #     forage(rob)
+    
+    # Modify argument handling
+    elif sys.argv[1] == "--forage":
+        if sys.argv[2] == "--simulation":
+            rob = SimulationRobobo()
+            forage(rob)  # This now uses RL
+        elif sys.argv[2] == "--hardware":
+            rob = HardwareRobobo(camera=True)
+            forage(rob)
 
     else:
         raise ValueError(f"{sys.argv[1]} is not a valid argument.")

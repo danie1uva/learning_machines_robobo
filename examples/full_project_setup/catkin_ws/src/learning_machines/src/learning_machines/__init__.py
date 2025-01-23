@@ -1,3 +1,6 @@
+from .week_3.foraging import forage
+from .week_3.dqn_foraging import DQN, train_dqn_foraging
+
 from .week_1.test_actions import (
     run_all_actions, 
     )
@@ -40,5 +43,7 @@ __all__ = (
     "go_to_space",
     "train_dqn_with_coppeliasim",
     "run_dqn_with_coppeliasim",
-    "forage"
+    "forage",
+    "DQN",	
+    "train_dqn_foraging"
     )
