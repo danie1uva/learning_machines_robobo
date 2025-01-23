@@ -10,8 +10,8 @@ from robobo_interface import IRobobo
 from .foraging_env import ForagingEnv
 
 class DQN(nn.Module):
-    """Deep Q-Network with 6 output actions"""
-    def __init__(self, input_shape, n_actions=6):  # Updated for 6 actions
+    """Deep Q-Network with 7 output actions matching the environment"""
+    def __init__(self, input_shape, n_actions=7):  # Corrected to 7 actions
         super().__init__()
         self.cnn = nn.Sequential(
             nn.Conv2d(3, 32, 8, stride=4),
@@ -28,9 +28,9 @@ class DQN(nn.Module):
             cnn_out = self.cnn(torch.zeros(1, *input_shape))
         
         self.fc = nn.Sequential(
-            nn.Linear(cnn_out.shape[1] + 5, 512),
+            nn.Linear(cnn_out.shape[1] + 5, 512),  # 5 comes from IRS sensors
             nn.ReLU(),
-            nn.Linear(512, n_actions)
+            nn.Linear(512, n_actions)  # Now outputs 7 values
         )
 
     def forward(self, image, irs):
@@ -53,22 +53,23 @@ class ReplayBuffer:
         return len(self.buffer)
 
 def train_dqn_foraging(rob: IRobobo):
-    """Training loop with proper package tracking"""
+    """Training loop with action dimension fix"""
     wandb.init(
         project="robobo-foraging",
         config={
             "learning_rate": 1e-4,
             "batch_size": 32,
             "gamma": 0.99,
-            "epsilon_decay": 0.999,  # Slower decay
+            "epsilon_decay": 0.9995,  # Slower decay
             "min_epsilon": 0.1,
-            "eps_decay_steps": 30000  # Slower decay over more steps
+            "eps_decay_steps": 40000  # More gradual exploration
         }
     )
     
     env = ForagingEnv(rob)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
+    # Initialize model with correct number of actions
     model = DQN(input_shape=(3, 64, 64)).to(device)
     target_model = DQN(input_shape=(3, 64, 64)).to(device)
     target_model.load_state_dict(model.state_dict())
@@ -96,7 +97,7 @@ def train_dqn_foraging(rob: IRobobo):
             
             # Epsilon-greedy action selection
             if random.random() < epsilon:
-                action = env.action_space.sample()
+                action = env.action_space.sample()  # Returns 0-6
             else:
                 with torch.no_grad():
                     image_tensor = torch.FloatTensor(state['image']).permute(2, 0, 1).unsqueeze(0).to(device)
