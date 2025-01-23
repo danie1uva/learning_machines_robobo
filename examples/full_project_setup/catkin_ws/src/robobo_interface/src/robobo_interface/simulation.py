@@ -448,6 +448,12 @@ class SimulationRobobo(IRobobo):
         """
         pos = self._sim.getObjectPosition(self._robobo, self._sim.handle_world)
         return Position(*pos)
+    
+    # # In SimulationRobobo class (simulation.py) add:
+    # def set_simulation_speed(self, speed: float):
+    #     """Set simulation speed multiplier using correct parameter ID"""
+    #     # Parameter ID 3 = simulation speed factor (documented in CoppeliaSim)
+    #     self._sim.setFloatParam(3, speed)
 
     def get_orientation(self) -> Orientation:
         """Get the orientation of the Robobo (Relative to the world)

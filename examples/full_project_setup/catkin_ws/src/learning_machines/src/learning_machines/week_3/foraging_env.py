@@ -27,7 +27,7 @@ class ForagingEnv(gym.Env):
         
         # Episode tracking
         self.episode_count = 0
-        self.max_steps = 40  # 75 movements per episode
+        self.max_steps = 50  # 75 movements per episode
         self.current_step = 0
         self.episode_start_time = None
         self.simulation_reset_interval = 20

@@ -43,15 +43,18 @@ class ReplayBuffer(deque):
         return random.sample(self, batch_size)
 
 def train_dqn_foraging(rob: IRobobo):
-    """Training loop with episode management"""
-    wandb.init(project="robobo-foraging", config={
-        "learning_rate": 1e-4,
-        "batch_size": 32,
-        "gamma": 0.99,
-        "epsilon_decay": 0.999,
-        "min_epsilon": 0.1,
-        "eps_decay_steps": 20000
-    })
+    """Training loop with episode management and model saving"""
+    wandb.init(
+        project="robobo-foraging",
+        config={
+            "learning_rate": 1e-4,
+            "batch_size": 32,
+            "gamma": 0.99,
+            "eps_decay_episodes": 300,
+            "min_epsilon": 0.05,
+            "max_episodes": 500
+        }
+    )
     
     env = ForagingEnv(rob)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -63,17 +66,23 @@ def train_dqn_foraging(rob: IRobobo):
     optimizer = torch.optim.Adam(model.parameters(), lr=wandb.config.learning_rate)
     buffer = ReplayBuffer(50000)
     
-    episode = total_steps = 0
-    epsilon = 1.0
-    
-    while True:
+    episode = 0
+    total_steps = 0
+    max_episodes = wandb.config.max_episodes
+
+    while episode < max_episodes:
         state = env.reset()
         episode_reward = 0
         done = False
         
+        # Calculate epsilon based on episode progress
+        epsilon = max(
+            wandb.config.min_epsilon,
+            1.0 - (episode / wandb.config.eps_decay_episodes)
+        )
+
         while not done:
             total_steps += 1
-            epsilon = max(wandb.config.min_epsilon, 1.0 - total_steps/wandb.config.eps_decay_steps)
             
             # Epsilon-greedy action selection
             if random.random() < epsilon:
@@ -117,7 +126,7 @@ def train_dqn_foraging(rob: IRobobo):
                 loss.backward()
                 optimizer.step()
                 
-                wandb.log({"loss": loss.item()})
+                wandb.log({"training_loss": loss.item()})
             
             if total_steps % 1000 == 0:
                 target.load_state_dict(model.state_dict())
@@ -127,9 +136,24 @@ def train_dqn_foraging(rob: IRobobo):
         # Episode logging
         wandb.log({
             "episode": episode,
-            "reward": episode_reward,
+            "total_steps": total_steps,
+            "episode_reward": episode_reward,
             "collected": info["collected"],
             "epsilon": epsilon,
             "duration": info["duration"]
         })
+        
+        # Save checkpoint every 100 episodes
+        if episode % 100 == 0:
+            torch.save(model.state_dict(), f"checkpoint_ep{episode}.pth")
+            wandb.save(f"checkpoint_ep{episode}.pth")
+        
         episode += 1
+
+    # Final save
+    torch.save(model.state_dict(), "final_model.pth")
+    wandb.save("final_model.pth")
+    print(f"🏁 Training completed after {max_episodes} episodes")
+    
+    # Proper cleanup
+    wandb.finish()
