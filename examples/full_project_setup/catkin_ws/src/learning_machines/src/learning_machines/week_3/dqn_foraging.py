@@ -11,7 +11,7 @@ from .foraging_env import ForagingEnv
 
 class DQN(nn.Module):
     """Deep Q-Network with 7 output actions matching the environment"""
-    def __init__(self, input_shape, n_actions=7):  # Corrected to 7 actions
+    def __init__(self, input_shape, n_actions=20):  # Corrected to 7 actions
         super().__init__()
         self.cnn = nn.Sequential(
             nn.Conv2d(3, 32, 8, stride=4),

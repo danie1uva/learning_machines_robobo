@@ -12,7 +12,7 @@ class ForagingEnv(gym.Env):
     def __init__(self, rob: IRobobo):
         super().__init__()
         self.rob = rob
-        self.action_space = spaces.Discrete(7)
+        self.action_space = spaces.Discrete(20)
         self.observation_space = spaces.Dict({
             'image': spaces.Box(low=0, high=255, shape=(64, 64, 3), dtype=np.uint8),
             'irs': spaces.Box(low=0, high=1, shape=(5,), dtype=np.float32),
@@ -134,7 +134,7 @@ class ForagingEnv(gym.Env):
             
         # Progressive rewards
         reward += obs['proximity'][0] * 0.2  # Approach bonus
-        reward += obs['centered'][0] * 0.3    # Centering bonus
+        reward += obs['centered'][0] * 0.5    # Centering bonus
         reward -= 0.1  # Time penalty
         
         # Episode termination
@@ -150,15 +150,39 @@ class ForagingEnv(gym.Env):
         return obs, reward, done, info
 
     def _take_action(self, action):
-        """Precision movement actions with validation"""
+        """20 movement actions with varying speeds and durations"""
+        # Speed levels: 40, 60, 80, 100
+        # Turn ratios: 0.2, 0.4, 0.6, 0.8, 1.0 (straight)
         action_map = {
-            0: (-25, 50, 300),   # Sharp left
-            1: (15, 40, 400),    # Gentle left
-            2: (25, 25, 500),    # Forward
-            3: (40, 15, 400),    # Gentle right
-            4: (50, -25, 300),   # Sharp right
-            5: (-35, -35, 300),  # Backward
-            6: (0, 0, 10)      # Collection attempt
+            # Forward movements (straight)
+            0: (100, 100, 150),   # Full speed forward
+            1: (80, 80, 200),     # Fast forward
+            2: (60, 60, 250),     # Medium forward
+            3: (40, 40, 300),     # Slow forward
+            
+            # Right turns
+            4: (100, 80, 100),    # Sharp right
+            5: (80, 60, 150),     # Medium right
+            6: (60, 40, 200),     # Gentle right
+            7: (100, 60, 80),     # Fast sharp right
+            8: (80, 40, 120),     # Fast medium right
+            
+            # Left turns
+            9: (80, 100, 100),    # Sharp left
+            10: (60, 80, 150),    # Medium left
+            11: (40, 60, 200),    # Gentle left
+            12: (60, 100, 80),    # Fast sharp left
+            13: (40, 80, 120),    # Fast medium left
+            
+            # Curved movements
+            14: (100, 40, 120),   # Extreme right curve
+            15: (40, 100, 120),   # Extreme left curve
+            16: (80, 20, 150),    # Right pivot
+            17: (20, 80, 150),    # Left pivot
+            
+            # Precision adjustments
+            18: (30, 50, 100),    # Small left adjust
+            19: (50, 30, 100),    # Small right adjust
         }
         l_speed, r_speed, duration = action_map[action]
         self.rob.move_blocking(l_speed, r_speed, duration)
