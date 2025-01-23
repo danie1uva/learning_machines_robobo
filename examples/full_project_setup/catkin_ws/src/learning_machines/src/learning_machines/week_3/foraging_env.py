@@ -21,7 +21,7 @@ class ForagingEnv(gym.Env):
         })
 
         # Package tracking
-        self.initial_package_count = 8
+        self.initial_package_count = 7
         self.total_packages_collected = 0
         self.current_episode_collected = 0
         
