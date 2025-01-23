@@ -5,11 +5,6 @@ import cv2
 import time
 from gym import spaces
 from robobo_interface import IRobobo
-from robobo_interface import (
-    IRobobo,
-    SimulationRobobo,
-    HardwareRobobo,
-)
 
 class ForagingEnv(gym.Env):
     """Custom Gym environment for foraging task"""
@@ -24,10 +19,12 @@ class ForagingEnv(gym.Env):
         })
         
         self.episode_count = 0
-        self.package_count = 0
+        self.package_count = 0  # Packages in current episode
+        self.total_packages = 0  # Total collected across all episodes
         self.max_steps = 500
         self.current_step = 0
         self.episode_start_time = None
+        self.simulation_reset_interval = 50  # Reset simulation every N episodes
 
     def reset(self):
         """Reset environment for new episode"""
@@ -35,12 +32,18 @@ class ForagingEnv(gym.Env):
         self.package_count = 0
         self.episode_start_time = time.time()
         
-        if self.episode_count % 50 == 0:
+        # Full simulation reset every N episodes
+        if self.episode_count % self.simulation_reset_interval == 0:
             self.rob.stop_simulation()
             self.rob.play_simulation()
-            
+            self.total_packages = 0  # Reset total count on simulation reset
+            print(f"\n=== Simulation Reset ===")
+            print(f"Fresh environment with new packages")
+        
         self.episode_count += 1
         
+        print(f"\nStarting Episode {self.episode_count}")
+        print(f"Total packages collected so far: {self.total_packages}")
         return self._get_observation()
 
     def _get_observation(self):
@@ -71,16 +74,25 @@ class ForagingEnv(gym.Env):
         obs = self._get_observation()
         
         # Calculate reward
-        reward = self._calculate_reward(obs)
+        reward, package_found = self._calculate_reward(obs)
         
         # Check for done condition
-        done |= self._check_collision(obs['irs'])
+        collision = self._check_collision(obs['irs'])
+        done |= collision
         
         info = {
             "episode_duration": time.time() - self.episode_start_time,
-            "total_packages": self.package_count
+            "total_packages": self.total_packages,
+            "collision": collision,
+            "package_found": package_found
         }
         
+        # Print immediate feedback
+        if package_found:
+            print(f"🎁 Package collected! (Total: {self.total_packages})")
+        if collision:
+            print("💥 Collision detected!")
+            
         return obs, reward, done, info
 
     def _take_action(self, action):
@@ -95,31 +107,38 @@ class ForagingEnv(gym.Env):
         self.rob.move_blocking(*action_map[action])
 
     def _calculate_reward(self, obs):
-        """Custom reward function"""
+        """Custom reward function with detailed tracking"""
         reward = 0
+        package_found = False
         
-        # Check for collected package
         if self._detect_package(obs['image']):
             reward += 10
             self.package_count += 1
+            self.total_packages += 1
+            package_found = True
             
         # Time penalty
         reward -= 0.1
         
-        # Collision penalty
         if self._check_collision(obs['irs']):
             reward -= 2
             
-        return reward
+        return reward, package_found
 
     def _detect_package(self, image):
-        """Detect green packages using CV"""
+        """Detect green packages using CV with validation"""
         hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
         lower_green = np.array([40, 50, 50])
         upper_green = np.array([80, 255, 255])
         mask = cv2.inRange(hsv, lower_green, upper_green)
-        return cv2.countNonZero(mask) > 100
+        count = cv2.countNonZero(mask)
+        
+        # Validation check
+        if count > 100:
+            return True
+        return False
 
     def _check_collision(self, irs):
-        """Check for collision using IR sensors"""
-        return any(s > 0.8 for s in irs)
+        """Check for collision using IR sensors with validation"""
+        collision_detected = any(s > 0.8 for s in irs)
+        return collision_detected

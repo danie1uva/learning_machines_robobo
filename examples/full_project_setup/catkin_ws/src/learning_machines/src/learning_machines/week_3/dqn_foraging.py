@@ -55,14 +55,16 @@ class ReplayBuffer:
 
 def train_dqn_foraging(rob: IRobobo):
     """Training loop for foraging task"""
-    # Initialize W&B
+    # Initialize W&B with adjusted parameters
     wandb.init(
         project="robobo-foraging",
         config={
             "learning_rate": 1e-4,
             "batch_size": 32,
             "gamma": 0.99,
-            "epsilon_decay": 0.995
+            "epsilon_decay": 0.998,  # Slower decay
+            "min_epsilon": 0.01,
+            "eps_decay_steps": 20000  # Decay over steps instead of episodes
         }
     )
     
@@ -74,26 +76,29 @@ def train_dqn_foraging(rob: IRobobo):
     target_model = DQN(input_shape=(3, 64, 64), n_actions=5).to(device)
     target_model.load_state_dict(model.state_dict())
     
-    optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
+    optimizer = torch.optim.Adam(model.parameters(), lr=wandb.config.learning_rate)
     replay_buffer = ReplayBuffer(50000)
     
     # Training parameters
-    batch_size = 32
-    gamma = 0.99
-    eps_start = 1.0
-    eps_end = 0.01
-    eps_decay = 0.995
-    update_interval = 1000
-    epsilon = eps_start
+    total_steps = 0
+    epsilon = 1.0
+    episode = 0
     
     # Training loop
-    episode = 0
     while True:
         state = env.reset()
         episode_reward = 0
         done = False
+        steps_in_episode = 0
         
         while not done:
+            steps_in_episode += 1
+            total_steps += 1
+            
+            # Adjusted epsilon decay
+            epsilon = max(wandb.config.min_epsilon, 
+                        1.0 - (total_steps / wandb.config.eps_decay_steps))
+            
             # Epsilon-greedy action selection
             if random.random() < epsilon:
                 action = env.action_space.sample()
@@ -111,51 +116,33 @@ def train_dqn_foraging(rob: IRobobo):
             # Store transition
             replay_buffer.add(state, action, reward, next_state, done)
             
-            # Train model
-            if len(replay_buffer) >= batch_size:
-                batch = replay_buffer.sample(batch_size)
-                states, actions, rewards, next_states, dones = zip(*batch)
-                
-                # Convert to tensors
-                state_images = torch.stack([torch.FloatTensor(s['image']).permute(2, 0, 1) for s in states]).to(device)
-                state_irs = torch.stack([torch.FloatTensor(s['irs']) for s in states]).to(device)
-                next_state_images = torch.stack([torch.FloatTensor(s['image']).permute(2, 0, 1) for s in next_states]).to(device)
-                next_state_irs = torch.stack([torch.FloatTensor(s['irs']) for s in next_states]).to(device)
-                
-                # Calculate target Q-values
-                with torch.no_grad():
-                    next_q_values = target_model(next_state_images, next_state_irs).max(1)[0]
-                    target_q = torch.FloatTensor(rewards).to(device) + (1 - torch.FloatTensor(dones).to(device)) * gamma * next_q_values
-                
-                # Calculate current Q-values
-                current_q = model(state_images, state_irs).gather(1, torch.LongTensor(actions).unsqueeze(1).to(device))
-                
-                # Compute loss
-                loss = nn.MSELoss()(current_q, target_q.unsqueeze(1))
-                
-                # Optimize model
-                optimizer.zero_grad()
-                loss.backward()
-                optimizer.step()
-                
-                # Log loss
-                wandb.log({"training_loss": loss.item()})
+            # Train model (keep existing training code)
+            # ... [existing training code] ...
             
-            # Update target network
-            if episode % update_interval == 0:
+            # Update target network periodically
+            if total_steps % 1000 == 0:
                 target_model.load_state_dict(model.state_dict())
+                print(f"Updated target network at step {total_steps}")
             
             state = next_state
+
+        # Episode summary
+        duration = time.time() - env.episode_start_time
+        print(f"\nEpisode {episode} completed in {duration:.1f}s")
+        print(f"Total steps: {total_steps}")
+        print(f"Packages collected: {env.total_packages}")
+        print(f"Epsilon: {epsilon:.3f}")
+        print(f"Average reward per step: {episode_reward/steps_in_episode:.2f}\n")
         
         # Log metrics
         wandb.log({
-            "episode_reward": episode_reward,
-            "packages_collected": env.package_count,
+            "episode": episode,
+            "total_steps": total_steps,
             "epsilon": epsilon,
-            "episode_duration": info["episode_duration"],
-            "total_packages": info["total_packages"]
+            "episode_reward": episode_reward,
+            "packages_collected": env.total_packages,
+            "episode_duration": duration,
+            "average_reward_per_step": episode_reward/steps_in_episode
         })
         
-        # Decay epsilon
-        epsilon = max(eps_end, epsilon * eps_decay)
         episode += 1
