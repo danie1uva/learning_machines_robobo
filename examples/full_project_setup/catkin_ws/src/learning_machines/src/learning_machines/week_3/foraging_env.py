@@ -7,7 +7,7 @@ from gym import spaces
 from robobo_interface import IRobobo, SimulationRobobo
 
 class ForagingEnv(gym.Env):
-    """Custom Gym environment with reliable package collection"""
+    """Custom Gym environment with full episode management"""
     
     def __init__(self, rob: IRobobo):
         super().__init__()
@@ -21,179 +21,155 @@ class ForagingEnv(gym.Env):
         })
 
         # Package tracking
-        self.initial_package_count = 8  # Set this to match your scene's food count
+        self.initial_package_count = 8
         self.total_packages_collected = 0
-        self.last_collected_count = 0
+        self.current_episode_collected = 0
         
         # Episode tracking
         self.episode_count = 0
-        self.max_steps = 500
+        self.max_steps = 40  # 75 movements per episode
         self.current_step = 0
         self.episode_start_time = None
         self.simulation_reset_interval = 20
 
+        # Action mapping
+        self.action_map = {
+            # Forward movements (≥80 speed)
+            0: (80, 80, 200),     # Forward
+            1: (100, 100, 150),   # Fast forward
+            # Backward movements
+            2: (-80, -80, 200),   # Backward
+            3: (-100, -100, 150), # Fast backward
+            # Right turns
+            4: (100, 80, 100),    5: (80, 60, 150),    6: (80, 40, 200),
+            7: (-80, -100, 100),  8: (-60, -80, 150),
+            # Left turns
+            9: (80, 100, 100),   10: (60, 80, 150),   11: (40, 80, 200),
+            12: (-100, -80, 100),13: (-80, -60, 150),
+            # Complex movements
+            14: (100, 40, 120),  15: (40, 100, 120),
+            16: (-80, -40, 120), 17: (-40, -80, 120),
+            18: (20, 80, 150),   19: (80, 20, 150)
+        }
+
     def reset(self):
-        """Reset environment with proper package validation"""
+        """Reset environment for new episode"""
         self.current_step = 0
-        self.last_collected_count = 0
+        self.current_episode_collected = 0
         self.episode_start_time = time.time()
         
-        if self.episode_count % self.simulation_reset_interval == 0:
-            if isinstance(self.rob, SimulationRobobo):
-                self.rob.stop_simulation()
-                self.rob.play_simulation()
-                self.total_packages_collected = 0  # Reset total when environment refreshes
-            print(f"\n=== ENVIRONMENT RESET ===")
-            print(f"New episode starts with {self.initial_package_count} packages")
+        # Always reset simulation for SimulationRobobo
+        if isinstance(self.rob, SimulationRobobo):
+            self.rob.stop_simulation()
+            self.rob.play_simulation()
+            time.sleep(1)  # Allow time for simulation reset
+            print(f"\n=== SIMULATION RESET ===")
+        
+        # Reset package counters
+        self.current_episode_collected = 0
+        if isinstance(self.rob, SimulationRobobo):
+            self.total_packages_collected = 0  # Reset total when simulation restarts
         
         self.episode_count += 1
         print(f"\nStarting Episode {self.episode_count}")
-        print(f"Total collected packages: {self.total_packages_collected}")
         return self._get_observation()
 
     def _get_observation(self):
-        """Get observation with package verification"""
+        """Get current observation"""
         image = cv2.resize(self.rob.read_image_front(), (64, 64))
         irs = self._process_irs()
-        
-        # Package detection
         centered, _ = self._detect_centered_package(image)
-        proximity = self._get_proximity(irs)
-        
         return {
             'image': image,
             'irs': irs,
-            'proximity': np.array([proximity], dtype=np.float32),
+            'proximity': np.array([max(irs[1], irs[2], irs[3])], dtype=np.float32),
             'centered': np.array([centered], dtype=np.float32)
         }
 
     def _process_irs(self):
-        """Process IR sensors with validation"""
+        """Process IR sensors into normalized values"""
         raw_irs = self.rob.read_irs()
         return np.clip([raw_irs[7], raw_irs[2], raw_irs[4], raw_irs[3], raw_irs[5]], 0, 3000) / 3000
 
-    def _get_proximity(self, irs):
-        """Calculate front proximity score"""
-        return max(irs[1], irs[2], irs[3])
-
     def _detect_centered_package(self, image):
-        """Detect centered green packages with size validation"""
+        """Detect centered green packages"""
         hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-        lower_green = np.array([35, 50, 50])
-        upper_green = np.array([85, 255, 255])
-        mask = cv2.inRange(hsv, lower_green, upper_green)
-        
+        mask = cv2.inRange(hsv, np.array([35, 50, 50]), np.array([85, 255, 255]))
         contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        if not contours:
-            return 0.0, None
+        
+        if not contours: return 0.0, None
         
         largest = max(contours, key=cv2.contourArea)
         x, y, w, h = cv2.boundingRect(largest)
-        
-        # Check if centered (middle 25% of frame)
         frame_center = image.shape[1] // 2
         box_center = x + w//2
         centered = abs(box_center - frame_center) < image.shape[1] * 0.125
-        
-        # Size validation (at least 2% of frame area)
-        contour_area = cv2.contourArea(largest)
-        size_ok = (contour_area / (image.shape[0] * image.shape[1])) > 0.02
+        size_ok = cv2.contourArea(largest)/(image.shape[0]*image.shape[1]) > 0.02
         
         return float(centered and size_ok), (x, y, w, h)
 
     def step(self, action):
-        """Execute action with validated package collection"""
+        """Execute action and return new state"""
         self.current_step += 1
-        
-        # Store initial collected count
         start_collected = self._get_collected_count()
         
-        # Execute action
+        # Execute movement
         self._take_action(action)
-        time.sleep(0.5)  # Allow time for collection
+        time.sleep(0.5)
         
-        # Get new state
         obs = self._get_observation()
-        reward = 0
-        done = False
-        
-        # Verify package collection
+        reward, done = 0, False
         current_collected = self._get_collected_count()
         new_collections = current_collected - start_collected
         
+        # Update package tracking
         if new_collections > 0:
             self.total_packages_collected += new_collections
+            self.current_episode_collected += new_collections
             reward += 10 * new_collections
-            print(f"🎁 Collected {new_collections} package(s)! Total: {self.total_packages_collected}")
+            print(f"🎁 Collected {new_collections} package(s)! Episode total: {self.current_episode_collected}")
+
+        # Collision detection
+        action_params = self.action_map[action]
+        l_speed, r_speed, _ = action_params
+        collision = self._check_collision(obs['irs'], l_speed, r_speed)
         
-        # Collision penalty
-        if self._check_collision(obs['irs']):
+        if collision:
             reward -= 2
             print("💥 Collision detected!")
             done = True
-            
-        # Progressive rewards
-        reward += obs['proximity'][0] * 0.2  # Approach bonus
-        reward += obs['centered'][0] * 0.5    # Centering bonus
+        else:
+            # Movement reward
+            if (l_speed > 0 and r_speed > 0) or (l_speed < 0 and r_speed < 0):
+                reward += 0.5
+
+        # Additional rewards
+        reward += obs['proximity'][0] * 0.2
+        reward += obs['centered'][0] * 0.5
         reward -= 0.1  # Time penalty
-        
-        # Episode termination
+
+        # Termination conditions
         done |= self.current_step >= self.max_steps
-        done |= current_collected >= self.initial_package_count
+        done |= self.current_episode_collected >= self.initial_package_count
         
-        info = {
+        return obs, reward, done, {
             "duration": time.time() - self.episode_start_time,
-            "total_collected": self.total_packages_collected,
-            "new_collections": new_collections
+            "collected": self.current_episode_collected
         }
-        
-        return obs, reward, done, info
 
     def _take_action(self, action):
-        """20 movement actions with varying speeds and durations"""
-        # Speed levels: 40, 60, 80, 100
-        # Turn ratios: 0.2, 0.4, 0.6, 0.8, 1.0 (straight)
-        action_map = {
-            # Forward movements (straight)
-            0: (100, 100, 150),   # Full speed forward
-            1: (80, 80, 200),     # Fast forward
-            2: (60, 60, 250),     # Medium forward
-            3: (40, 40, 300),     # Slow forward
-            
-            # Right turns
-            4: (100, 80, 100),    # Sharp right
-            5: (80, 60, 150),     # Medium right
-            6: (60, 40, 200),     # Gentle right
-            7: (100, 60, 80),     # Fast sharp right
-            8: (80, 40, 120),     # Fast medium right
-            
-            # Left turns
-            9: (80, 100, 100),    # Sharp left
-            10: (60, 80, 150),    # Medium left
-            11: (40, 60, 200),    # Gentle left
-            12: (60, 100, 80),    # Fast sharp left
-            13: (40, 80, 120),    # Fast medium left
-            
-            # Curved movements
-            14: (100, 40, 120),   # Extreme right curve
-            15: (40, 100, 120),   # Extreme left curve
-            16: (80, 20, 150),    # Right pivot
-            17: (20, 80, 150),    # Left pivot
-            
-            # Precision adjustments
-            18: (30, 50, 100),    # Small left adjust
-            19: (50, 30, 100),    # Small right adjust
-        }
-        l_speed, r_speed, duration = action_map[action]
+        """Execute movement from action map"""
+        l_speed, r_speed, duration = self.action_map[action]
         self.rob.move_blocking(l_speed, r_speed, duration)
 
     def _get_collected_count(self):
-        """Get actual collected count from simulation"""
-        if isinstance(self.rob, SimulationRobobo):
-            return self.rob.get_nr_food_collected()
-        # Hardware implementation would need different logic
-        return 0
+        """Get current collection count from simulation"""
+        return self.rob.get_nr_food_collected() if isinstance(self.rob, SimulationRobobo) else 0
 
-    def _check_collision(self, irs):
-        """Validated collision detection"""
-        return any(value > 0.85 for value in irs)
+    def _check_collision(self, irs, l_speed, r_speed):
+        """Direction-aware collision detection"""
+        if l_speed > 0 and r_speed > 0:  # Forward
+            return any(irs[i] > 0.85 for i in [1, 2, 3])
+        elif l_speed < 0 and r_speed < 0:  # Backward
+            return any(irs[i] > 0.85 for i in [0, 4])
+        return any(irs > 0.85)  # Other movements check all sensors
