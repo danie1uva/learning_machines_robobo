@@ -454,7 +454,7 @@ class CoppeliaSimEnvHardware(gym.Env):
 
         # If desired, set phone orientation here (hardware only)
         self.rob.set_phone_pan_blocking(122, 100)
-        self.rob.set_phone_tilt_blocking(100, 100)
+        self.rob.set_phone_tilt_blocking(92, 100)
 
     def reset(self):
         """
@@ -487,7 +487,7 @@ class CoppeliaSimEnvHardware(gym.Env):
         wheels = self._determine_action(action)
         self.rob.move_blocking(wheels[0], wheels[1], wheels[2])
 
-        self._check_what_camera_sees()
+        # self._check_what_camera_sees()
 
         # Compute next observation
         next_state, green_boxes, normalised_sensors = self._compute_state()
@@ -544,15 +544,15 @@ class CoppeliaSimEnvHardware(gym.Env):
         The logic can differ from sim if the real robot needs different timings.
         """
         if action_idx == 0:    # left
-            return [-25, 100, 600]
+            return [-25, 100, 500]
         elif action_idx == 1:  # left-forward
             return [-25, 100, 300]
         elif action_idx == 2:  # forward
-            return [100, 100, 800]
+            return [100, 100, 1000]
         elif action_idx == 3:  # right-forward
             return [100, -25, 300]
         else:                  # right
-            return [100, -25, 600]
+            return [100, -25, 500]
 
     def _detect_green_areas(self, frame):
         # On hardware, phone camera might be rotated:

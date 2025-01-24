@@ -2,11 +2,19 @@
 
 set -xe
 
-docker build --platform linux/amd64 --tag learning_machines .
-# Mounting to a directory that does not exist creates it.
-# Mounting to relative paths works since docker engine 23
-docker run -t --rm --platform linux/amd64 -p 45100:45100 -p 45101:45101 -v "$(pwd)/results:/root/results" learning_machines "$@"
+export WANDB_API_KEY=""
 
-# Because docker runs as root, this means the files will be owned by the root user.
-# Change this with:
+# Build the Docker image
+docker build --platform linux/amd64 --tag learning_machines .
+
+# Run the container, passing the WandB API key as an environment variable
+docker run -t --rm --platform linux/amd64 \
+  -p 45100:45100 \
+  -p 45101:45101 \
+  -e WANDB_API_KEY="$WANDB_API_KEY" \
+  -v "$(pwd)/results:/root/results" \
+  learning_machines "$@"
+
+# Adjust file ownership
 # sudo chown "$USER":"$USER" ./results -R
+
