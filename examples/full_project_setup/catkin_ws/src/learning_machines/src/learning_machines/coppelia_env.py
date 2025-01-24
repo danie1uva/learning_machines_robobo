@@ -64,10 +64,12 @@ class CoppeliaSimEnv(gym.Env):
 
     def reset(self):
         # Stop old episode
-        self.rob.stop_simulation()
+        if self.setting == "sim":
+            self.rob.stop_simulation()
         
         # Start fresh
-        self.rob.play_simulation()
+        if self.setting == "sim":
+            self.rob.play_simulation()
 
         # this must be done after play_simulation
         if self.setting == "hardware":
@@ -123,64 +125,72 @@ class CoppeliaSimEnv(gym.Env):
 
         next_state, green_boxes, normalised_sensors = self._compute_state()
 
-        # ---------------------------------
-        # REWARD CALCULATION
-        # ---------------------------------
-        reward = 0.0
+        if self.setting == "sim":
+            # i guess we only need to do this in the sim, while learning
+            # ---------------------------------
+            # REWARD CALCULATION
+            # ---------------------------------
+            reward = 0.0
 
-        # 1) Partial progress (vision-based reward shaping)
-        reward += self._calculate_partial_progress_reward(
-            self.green_boxes_last, green_boxes
-        )
+            # 1) Partial progress (vision-based reward shaping)
+            reward += self._calculate_partial_progress_reward(
+                self.green_boxes_last, green_boxes
+            )
 
-        # 2) Box collection reward (using the simulator's "food collected" count)
-        collected_count = self.rob.get_nr_food_collected()
-        print(f"Collected count: {collected_count}")
+            # 2) Box collection reward (using the simulator's "food collected" count)
+            collected_count = self.rob.get_nr_food_collected()
+            print(f"Collected count: {collected_count}")
 
-        newly_collected = collected_count - self.collected_count_previous
-        if newly_collected > 0:
-            # For each newly collected box, give +30 reward (example)
-            reward += 30 * newly_collected
+            newly_collected = collected_count - self.collected_count_previous
+            if newly_collected > 0:
+                # For each newly collected box, give +30 reward (example)
+                reward += 30 * newly_collected
 
-        self.collected_count_previous = collected_count
-        self.num_boxes_remaining = max(0, self.num_initial_boxes - collected_count)
+            self.collected_count_previous = collected_count
+            self.num_boxes_remaining = max(0, self.num_initial_boxes - collected_count)
 
-        # 3) Collision penalty
-        collision = self._check_collision(normalised_sensors, green_boxes)
-        if collision:
-            reward -= 50
+            # 3) Collision penalty
+            collision = self._check_collision(normalised_sensors, green_boxes)
+            if collision:
+                reward -= 50
 
-        # 4) Time penalty
-        time_penalty = 0.1 + 0.001 * self.steps_in_episode
-        reward -= time_penalty
+            # 4) Time penalty
+            time_penalty = 0.1 + 0.001 * self.steps_in_episode
+            reward -= time_penalty
 
-        # 5) Completion bonus if all boxes collected
-        if self.num_boxes_remaining == 0 and not collision:
-            reward += 100
+            # 5) Completion bonus if all boxes collected
+            if self.num_boxes_remaining == 0 and not collision:
+                reward += 100
 
-        # ---------------------------------
-        # EPISODE TERMINATION CHECKS
-        # ---------------------------------
+            # ---------------------------------
+            # EPISODE TERMINATION CHECKS
+            # ---------------------------------
 
-        # A) Collision or all boxes collected
-        if collision or (self.num_boxes_remaining == 0):
-            print("episode ended due to collision or all boxes collected")
-            self.done = True
+            # A) Collision or all boxes collected
+            if collision or (self.num_boxes_remaining == 0):
+                print("episode ended due to collision or all boxes collected")
+                self.done = True
 
-        # B) Perform 360° sweep at step 150 to confirm no boxes in view
-        elif self.steps_in_episode == self.sweep_step:
-            self.done = True
-            for _ in range(5):
-                self.rob.move_blocking(-25, 75, 500)
-                frame = self.rob.read_image_front()
-                green_boxes = self._detect_green_areas(frame) 
-                if len(green_boxes) > 0:
-                    self.done = False
-                    break
+            # B) Perform 360° sweep at step sweep_step to confirm no boxes in view
+            elif self.steps_in_episode == self.sweep_step:
+                self.done = True
+                for _ in range(5):
+                    self.rob.move_blocking(-25, 75, 500)
+                    frame = self.rob.read_image_front()
+                    green_boxes = self._detect_green_areas(frame) 
+                    if len(green_boxes) > 0:
+                        self.done = False
+                        break
 
-        # C) Hard step limit
-        elif self.steps_in_episode >= self.max_steps:
-            self.done = True
+            # C) Hard step limit
+            elif self.steps_in_episode >= self.max_steps:
+                self.done = True
+
+        else:
+            # Hardware: Reward is 0, termination is based on time only
+            reward = 0.0
+            if self.steps_in_episode >= self.max_steps:
+                self.done = True
 
         # Update internal states
         self.state = next_state
@@ -259,16 +269,28 @@ class CoppeliaSimEnv(gym.Env):
         ]
 
     def _determine_action(self, action_idx):
-        if action_idx == 0:    # left
-            return [-25, 100, 500]
-        elif action_idx == 1:  # left-forward
-            return [-25, 100, 300]
-        elif action_idx == 2:  # forward
-            return [100, 100, 500]
-        elif action_idx == 3:  # right-forward
-            return [100, -25, 300]
-        else:                  # right
-            return [100, -25, 500]
+        if self.setting == "sim":
+            if action_idx == 0:    # left
+                return [-25, 100, 500]
+            elif action_idx == 1:  # left-forward
+                return [-25, 100, 300]
+            elif action_idx == 2:  # forward
+                return [100, 100, 500]
+            elif action_idx == 3:  # right-forward
+                return [100, -25, 300]
+            else:                  # right
+                return [100, -25, 500]
+        else:
+                if action_idx == 0:    # left
+                    return [-25, 100, 600]
+                elif action_idx == 1:  # left-forward
+                    return [-25, 100, 300]
+                elif action_idx == 2:  # forward
+                    return [100, 100, 800]
+                elif action_idx == 3:  # right-forward
+                    return [100, -25, 300]
+                else:                  # right
+                    return [100, -25, 600]
 
     def _check_collision(self, sensors, green_boxes):
         if max(sensors) > self.proximity_threshold:
@@ -369,6 +391,226 @@ class CoppeliaSimEnv(gym.Env):
 
         if self.setting == "hardware":
             frame = cv2.rotate(frame, cv2.ROTATE_180)
+
+        hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+        lower_green = np.array([40, 50, 50])
+        upper_green = np.array([80, 255, 255])
+        mask = cv2.inRange(hsv, lower_green, upper_green)
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        frame_copy = frame.copy()
+        threshold = 1000
+        for contour in contours:
+            x, y, w, h = cv2.boundingRect(contour)
+            if w * h > threshold:
+                cv2.rectangle(frame_copy, (x, y), (x + w, y + h), (0, 255, 0), 2)
+
+        current_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S_%f")
+        cv2.imwrite(str(FIGURES_DIR / f"contoured_image_{current_time}.png"), frame_copy)
+
+class CoppeliaSimEnvHardware(gym.Env):
+    """
+    A bare-bones environment for running a trained RL agent on hardware.
+    No simulation calls or environment randomization logic.
+    Observations come from IR sensors + front camera (like the sim env).
+    Actions move the real robot wheels. Done is always False unless you manually override.
+    """
+
+    def __init__(self, rob: IRobobo, num_initial_boxes: int = 7):
+        super().__init__()
+        # Must be a hardware instance
+        if not isinstance(rob, HardwareRobobo):
+            raise ValueError("CoppeliaSimEnvHardware requires a HardwareRobobo instance.")
+
+        self.rob = rob
+        self.setting = "hardware"
+
+        # Same observation/action shape as in sim
+        self.max_boxes = 4
+        self.observation_space = spaces.Box(
+            low=0.0,
+            high=1.0,
+            shape=(5 + self.max_boxes * 4,),
+            dtype=np.float32
+        )
+        self.action_space = spaces.Discrete(5)
+
+        # Camera shape
+        frame = self.rob.read_image_front()
+        self.camera_height, self.camera_width = frame.shape[:2]
+
+        # Environment constants
+        self.proximity_y_threshold = 0.80
+        self.proximity_threshold = 0.5
+        self.num_initial_boxes = num_initial_boxes
+
+        # Bookkeeping
+        self.state = None
+        self.done = False
+        self.steps_in_episode = 0
+        self.collected_count_previous = 0
+
+        # You can still keep track if needed
+        self.num_boxes_remaining = self.num_initial_boxes
+
+        # If desired, set phone orientation here (hardware only)
+        self.rob.set_phone_pan_blocking(122, 100)
+        self.rob.set_phone_tilt_blocking(100, 100)
+
+    def reset(self):
+        """
+        Minimal reset: 
+        - We do not reposition the hardware robot or randomize anything here.
+        - Just reset counters and build initial observation.
+        """
+        self.done = False
+        self.steps_in_episode = 0
+        self.collected_count_previous = 0
+        self.num_boxes_remaining = self.num_initial_boxes
+
+        # Read initial state from sensors/camera
+        self.state, _, _ = self._compute_state()
+        return self.state.astype(np.float32)
+
+    def step(self, action):
+        """
+        Execute the chosen action on the hardware robot.
+        Return next_state, reward, done, info.
+        By default, we set reward=0, done=False. 
+        You can override if you want a time limit or manual stop.
+        """
+        if self.done:
+            raise RuntimeError("step() called after environment was done. Call reset().")
+
+        self.steps_in_episode += 1
+
+        # Apply the chosen action
+        wheels = self._determine_action(action)
+        self.rob.move_blocking(wheels[0], wheels[1], wheels[2])
+
+        self._check_what_camera_sees()
+
+        # Compute next observation
+        next_state, green_boxes, normalised_sensors = self._compute_state()
+
+        # In hardware mode, we won't do complicated collision checks or random termination.
+        # For demonstration, let's set a trivial reward and keep done = False.
+        reward = 0.0
+        done = False
+
+        # # If you want to track boxes collected (optional):
+        # collected_count = self.rob.get_nr_food_collected()
+        # newly_collected = collected_count - self.collected_count_previous
+        # if newly_collected > 0:
+        #     # You could give a reward for each newly collected box
+        #     reward += 30 * newly_collected
+
+        # self.collected_count_previous = collected_count
+        # self.num_boxes_remaining = max(0, self.num_initial_boxes - collected_count)
+
+        # If you want to stop when all boxes are collected:
+        # if self.num_boxes_remaining == 0:
+        #     done = True
+
+        # Or define a hardware-based step limit:
+        # if self.steps_in_episode >= 300:
+        #     done = True
+
+        self.state = next_state
+        info = {}
+
+        self.done = done
+        return self.state.astype(np.float32), reward, done, info
+
+    # ----------------------------
+    # HELPER METHODS
+    # ----------------------------
+    def _compute_state(self):
+        # Similar to your sim code: read IRs, read camera, detect boxes, etc.
+        irs = self.rob.read_irs()
+        raw_state = self._process_irs(irs)
+        normalised_sensors = self._clamp_and_normalise(raw_state)
+
+        frame = self.rob.read_image_front()
+        green_boxes = self._detect_green_areas(frame)
+        normalised_boxes = self._normalise_and_pad_boxes(green_boxes)
+
+        state = np.concatenate((normalised_sensors, normalised_boxes))
+        return state, green_boxes, normalised_sensors
+
+    def _determine_action(self, action_idx):
+        """
+        Adjust these to what you found works best on hardware:
+        (left_speed, right_speed, duration).
+        The logic can differ from sim if the real robot needs different timings.
+        """
+        if action_idx == 0:    # left
+            return [-25, 100, 600]
+        elif action_idx == 1:  # left-forward
+            return [-25, 100, 300]
+        elif action_idx == 2:  # forward
+            return [100, 100, 800]
+        elif action_idx == 3:  # right-forward
+            return [100, -25, 300]
+        else:                  # right
+            return [100, -25, 600]
+
+    def _detect_green_areas(self, frame):
+        # On hardware, phone camera might be rotated:
+        frame = cv2.rotate(frame, cv2.ROTATE_180)
+
+        hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+        lower_green = np.array([40, 50, 50])
+        upper_green = np.array([80, 255, 255])
+        mask = cv2.inRange(hsv, lower_green, upper_green)
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        coordinates_boxes = []
+        for contour in contours:
+            x, y, w, h = cv2.boundingRect(contour)
+            threshold = 1000
+            if w * h > threshold:
+                coordinates_boxes.append((x, y, w, h))
+        return coordinates_boxes
+
+    def _normalise_and_pad_boxes(self, green_boxes):
+        normalised_boxes = []
+        for x, y, w, h in green_boxes:
+            norm_x = x / self.camera_width
+            norm_y = y / self.camera_height
+            norm_w = w / self.camera_width
+            norm_h = h / self.camera_height
+            normalised_boxes.append([norm_x, norm_y, norm_w, norm_h])
+
+        while len(normalised_boxes) < self.max_boxes:
+            normalised_boxes.append([0.0, 0.0, 0.0, 0.0])
+        return np.array(normalised_boxes[:self.max_boxes]).flatten()
+
+    def _process_irs(self, sensor_vals):
+        """
+        Same IR ordering as sim. Adjust if hardware indexing is different.
+        """
+        # e.g. the hardware might have these sensor indexes in a different arrangement
+        return [
+            sensor_vals[7],
+            sensor_vals[2],
+            sensor_vals[4],
+            sensor_vals[3],
+            sensor_vals[5]
+        ]
+
+    def _clamp_and_normalise(self, sensor_vals):
+        MAX_SENSOR_VAL = 1000.0
+        clamped = np.clip(sensor_vals, 0.0, MAX_SENSOR_VAL)
+        return clamped / MAX_SENSOR_VAL
+    
+    def _check_what_camera_sees(self):
+        '''
+        save the current (processed) image to the figures directory
+        '''
+        frame = self.rob.read_image_front()
+
+        
+        frame = cv2.rotate(frame, cv2.ROTATE_180)
 
         hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
         lower_green = np.array([40, 50, 50])

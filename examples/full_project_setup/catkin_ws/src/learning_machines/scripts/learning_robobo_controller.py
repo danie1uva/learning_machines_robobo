@@ -60,9 +60,14 @@ if __name__ == "__main__":
         rob = SimulationRobobo()
         train_dqn_forage(rob)
 
-    elif sys.argv[1] == "--run_forage":
+    elif sys.argv[1] == "--run_forage" and sys.argv[2] == "--simulation":
         weights_path = "/root/catkin_ws/policy.pth" 
         rob = SimulationRobobo()
+        run_dqn_forage(rob, weights_path)
+    
+    elif sys.argv[1] == "--run_forage" and sys.argv[2] == "--hardware":
+        weights_path = "/root/catkin_ws/policy.pth" 
+        rob = HardwareRobobo(camera=True)
         run_dqn_forage(rob, weights_path)
 
     else:

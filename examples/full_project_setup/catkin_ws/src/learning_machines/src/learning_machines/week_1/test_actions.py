@@ -81,17 +81,25 @@ def test_hardware(rob: HardwareRobobo):
     print("Phone battery level: ", rob.phone_battery())
     print("Robot battery level: ", rob.robot_battery())
 
-
+def move(action_idx):
+    if action_idx == 0:    # left
+        return [-25, 100, 600]
+    elif action_idx == 1:  # left-forward
+        return [-25, 100, 400]
+    elif action_idx == 2:  # forward
+        return [100, 100, 800]
+    elif action_idx == 3:  # right-forward
+        return [100, -25, 400]
+    else:                  # right
+        return [100, -25, 600]
+    
 def run_all_actions(rob: IRobobo):
     if isinstance(rob, SimulationRobobo):
         rob.play_simulation()
 
-    while True:
-        sensors = rob.read_irs()
-        if max(sensors) > 700:
-            break
-        print("move")
-        rob.move_blocking(*[100, 100, 500])
+    for action_idx in range(5):
+        rob.move_blocking(*move(action_idx))
+        rob.sleep(2)
     
 
 

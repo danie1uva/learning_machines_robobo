@@ -25,7 +25,7 @@ WORKDIR /root/catkin_ws
 COPY ./catkin_ws .
 
 # Copy the pre-trained weights to the container
-COPY ./policy.pth /root/catkin_ws/policy.pth 
+ COPY ./dqn_model_2025-01-23_20-08-10_policy.pth /root/catkin_ws/policy.pth 
 
 # Set up the envoirement to actually run the code
 COPY ./scripts/entrypoint.bash ./entrypoint.bash

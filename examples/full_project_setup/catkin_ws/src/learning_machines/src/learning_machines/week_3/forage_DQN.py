@@ -12,7 +12,7 @@ from stable_baselines3.common.callbacks import BaseCallback
 
 # Make sure this import points to your custom environment script
 # containing the environment with 360 sweep and step-limit logic.
-from ..coppelia_env import CoppeliaSimEnv  
+from ..coppelia_env import CoppeliaSimEnv, CoppeliaSimEnvHardware
 
 from robobo_interface import IRobobo, SimulationRobobo, HardwareRobobo
 
@@ -116,9 +116,15 @@ def run_dqn_forage(rob: IRobobo, model_weights_path: str):
         name=f"run_{hyperparams['run_date']}" 
     )
 
+    setting = "sim" if isinstance(rob, SimulationRobobo) else "hardware"
     while True: 
-        rob.play_simulation()
-        env = CoppeliaSimEnv(rob, num_initial_boxes=wandb.config.num_initial_boxes)
+        if setting == "sim":
+            rob.play_simulation()
+
+        if setting == "sim":
+            env = CoppeliaSimEnv(rob, num_initial_boxes=wandb.config.num_initial_boxes)
+        else:
+            env = CoppeliaSimEnvHardware(rob, num_initial_boxes=wandb.config.num_initial_boxes)
 
         # Build a model shell to load weights into
         model = DQN(
@@ -148,5 +154,6 @@ def run_dqn_forage(rob: IRobobo, model_weights_path: str):
             action, _states = model.predict(obs)
             obs, reward, done, info = env.step(action)
         
-        rob.stop_simulation()
+        if setting == "sim":
+            rob.stop_simulation()
 
