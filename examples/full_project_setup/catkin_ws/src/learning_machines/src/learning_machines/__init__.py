@@ -34,6 +34,8 @@ from .week_3.forage_DQN import (
     run_dqn_forage
 )
 
+from .week_4.push import train_push_agent, run_push_agent
+
 __all__ = (
     "run_all_actions",
     "test_irs",
@@ -47,5 +49,7 @@ __all__ = (
     "run_dqn_with_coppeliasim",
     "RobotNavigator",
     "train_dqn_forage",
-    "run_dqn_forage"
+    "run_dqn_forage",
+    "train_push_agent",
+    "run_push_agent",
     )
