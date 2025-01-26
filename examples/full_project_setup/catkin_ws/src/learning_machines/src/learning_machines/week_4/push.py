@@ -49,10 +49,14 @@ class PushEnv(gym.Env):
         self.last_object_position = None
         self.object_in_target = False
         self.consecutive_target_frames = 0
+
+        # Get actual starting position from CoppeliaSim scene
+        initial_pos = self.rob.get_position()
+        initial_ori = self.rob.get_orientation()
         
-        # Reset robot position and orientation
-        self.rob.set_position(Position(0, 0, 0), Orientation(0, 0, 0))
-        
+        # Reset to scene's defined starting position
+        self.rob.set_position(initial_pos, initial_ori)
+
         # Initialize target position with verification
         self.target_position = self._reliably_detect_target()
         
