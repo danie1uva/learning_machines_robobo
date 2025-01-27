@@ -481,7 +481,7 @@ class SimulationRobobo(IRobobo):
     def get_food_position(self) -> Position:
         '''Get the position of the food to deliver.'''
 
-        if self._food_script is None:
+        if self._food is None:
             raise AttributeError("Cannot find any food in the scene")
         
         pos = self._sim.getObjectPosition(self._food, self._sim.handle_world)
