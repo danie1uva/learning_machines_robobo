@@ -1,4 +1,5 @@
 import cv2
+import numpy as np
 
 from data_files import FIGURES_DIR
 from robobo_interface import (
@@ -92,15 +93,25 @@ def move(action_idx):
         return [100, -25, 400]
     else:                  # right
         return [100, -25, 600]
+
+def distance_of_robot_to_puck(rob: IRobobo):
+    robot_pos = rob.get_position()
+    puck_pos = rob.get_food_position()
+
+    robot_pos = np.array([robot_pos.x, robot_pos.y, robot_pos.z])
+    puck_pos = np.array([puck_pos.x, puck_pos.y, puck_pos.z])
+    return np.linalg.norm(robot_pos - puck_pos) 
     
 def run_all_actions(rob: IRobobo):
     if isinstance(rob, SimulationRobobo):
         rob.play_simulation()
 
-    for action_idx in range(5):
-        rob.move_blocking(*move(action_idx))
-        rob.sleep(2)
-    
+    is_food_in_zone = False 
+
+    while not is_food_in_zone:
+        rob.move_blocking(50,50,100)
+        print("distance from robot to food", distance_of_robot_to_puck(rob))
+        is_food_in_zone = rob.base_detects_food()    
 
 
     if isinstance(rob, SimulationRobobo):

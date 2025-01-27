@@ -12,7 +12,7 @@ from stable_baselines3.common.callbacks import BaseCallback
 
 # Make sure this import points to your custom environment script
 # containing the environment with 360 sweep and step-limit logic.
-from ..coppelia_env import CoppeliaSimEnv, CoppeliaSimEnvHardware
+from .coppelia_env_forage import CoppeliaSimEnv, CoppeliaSimEnvHardware
 
 from robobo_interface import IRobobo, SimulationRobobo, HardwareRobobo
 
