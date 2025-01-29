@@ -34,6 +34,30 @@ from .week_3.forage_DQN import (
     run_dqn_forage
 )
 
+from .week_4.coppelia_env_push_PPO import (
+    CoppeliaSimEnv,
+)
+
+from .week_4.push_PPO import (
+    train_ppo_two_stage
+)
+
+from .week_4.push_DQN import (
+    train_dqn_two_stage
+)
+
+from .week_4.coppelia_env_push_DQN import (
+    CoppeliaSimEnvDQN
+)
+
+from .week_4.push_SAC import (
+    train_sac_dynamic_randomization
+)
+
+from .week_4.coppelia_env_push_SAC import (
+    CoppeliaSimEnv
+)
+
 __all__ = (
     "run_all_actions",
     "test_irs",
@@ -47,5 +71,11 @@ __all__ = (
     "run_dqn_with_coppeliasim",
     "RobotNavigator",
     "train_dqn_forage",
-    "run_dqn_forage"
+    "run_dqn_forage",
+    "CoppeliaSimEnv",
+    "train_ppo_two_stage",
+    "train_dqn_two_stage",
+    "CoppeliaSimEnvDQN",
+    "train_sac_dynamic_randomization",
+    "CoppeliaSimEnv"
     )

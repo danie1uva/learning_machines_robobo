@@ -12,7 +12,10 @@ from learning_machines import (run_all_actions,
                                run_all_actions,
                                RobotNavigator,
                                train_dqn_forage,
-                               run_dqn_forage
+                               run_dqn_forage,
+                               train_ppo_two_stage,
+                               train_dqn_two_stage,
+                               train_sac_dynamic_randomization
 )
 
 
@@ -69,6 +72,20 @@ if __name__ == "__main__":
         weights_path = "/root/catkin_ws/policy.pth" 
         rob = HardwareRobobo(camera=True)
         run_dqn_forage(rob, weights_path)
+
+    elif sys.argv[1] == "--train_push":
+        rob = SimulationRobobo()
+        train_ppo_two_stage(rob)
+    
+    elif sys.argv[1] == '--train_push_DQN':
+        rob = SimulationRobobo()
+        train_dqn_two_stage(rob)
+
+    elif sys.argv[1] == '--train_push_SAC':
+        rob = SimulationRobobo()
+        train_sac_dynamic_randomization(rob)
+
+        
 
     else:
         raise ValueError(f"{sys.argv[1]} is not a valid argument.")

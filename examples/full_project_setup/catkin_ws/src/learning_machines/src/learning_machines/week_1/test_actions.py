@@ -101,7 +101,23 @@ def distance_of_robot_to_puck(rob: IRobobo):
     robot_pos = np.array([robot_pos.x, robot_pos.y, robot_pos.z])
     puck_pos = np.array([puck_pos.x, puck_pos.y, puck_pos.z])
     return np.linalg.norm(robot_pos - puck_pos) 
-    
+
+MAX_SENSOR_VAL = 1000.0
+
+def process_irs(sensor_vals):
+    # Robot-specific indexing
+    return [
+        sensor_vals[7],
+        sensor_vals[2],
+        sensor_vals[4],
+        sensor_vals[3],
+        sensor_vals[5]
+    ]
+
+def clamp_and_normalise(vals):
+    clamped = np.clip(vals, 0.0, MAX_SENSOR_VAL)
+    return clamped / MAX_SENSOR_VAL
+
 def run_all_actions(rob: IRobobo):
     if isinstance(rob, SimulationRobobo):
         rob.play_simulation()
@@ -109,9 +125,14 @@ def run_all_actions(rob: IRobobo):
     is_food_in_zone = False 
 
     while not is_food_in_zone:
-        rob.move_blocking(50,50,100)
+        rob.move_blocking(50,50,300)
         print("distance from robot to food", distance_of_robot_to_puck(rob))
         is_food_in_zone = rob.base_detects_food()    
+        sensors = rob.read_irs()
+        sensors = process_irs(sensors)
+        sensors = clamp_and_normalise(sensors)
+        print("Sensor readings: ", sensors)
+
 
 
     if isinstance(rob, SimulationRobobo):

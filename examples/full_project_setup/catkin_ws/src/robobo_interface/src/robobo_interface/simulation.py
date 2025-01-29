@@ -530,17 +530,51 @@ class SimulationRobobo(IRobobo):
         return f"signal.block_{self._id}_{blockid}"
 
     def _initialise_handles(self) -> None:
-        # fmt: off
-        self._robobo = self._get_object(f"/Robobo{self._identifier}")
-        self._wheels_script = self._get_childscript(f"/Robobo{self._identifier}/Left_Motor")
-        self._leds_script = self._get_childscript(f"/Robobo{self._identifier}/Back_L")
-        self._ir_script = self._get_childscript(f"/Robobo{self._identifier}/IR_Back_C")
-        self._pan_motor_script = self._get_childscript(f"/Robobo{self._identifier}/Pan_Motor")
-        self._tilt_motor_script = self._get_childscript(f"/Robobo{self._identifier}/Pan_Motor/Pan_Respondable/Tilt_Motor")
-        self._smartphone_script = self._get_childscript(f"/Robobo{self._identifier}/Pan_Motor/Pan_Respondable/Tilt_Motor/Smartphone_Respondable")
-        self._smartphone_camera = self._get_object(f"/Robobo{self._identifier}/Pan_Motor/Pan_Respondable/Tilt_Motor/Smartphone_Respondable/Smartphone_camera")
-        # fmt: on
+        # Helper function to handle object retrieval with fallback
+        def get_object_with_fallback(name_primary: str, name_fallback: str):
+            try:
+                return self._get_object(name_primary)
+            except AttributeError:
+                return self._get_object(name_fallback)
 
+        def get_childscript_with_fallback(name_primary: str, name_fallback: str):
+            try:
+                return self._get_childscript(name_primary)
+            except AttributeError:
+                return self._get_childscript(name_fallback)
+
+        # Base Robobo object and its components
+        identifier = self._identifier
+        robobo_base = f"/Robobo{identifier}"
+        robobo_fallback = "/Robobo"
+
+        self._robobo = get_object_with_fallback(robobo_base, robobo_fallback)
+        self._wheels_script = get_childscript_with_fallback(
+            f"{robobo_base}/Left_Motor", f"{robobo_fallback}/Left_Motor"
+        )
+        self._leds_script = get_childscript_with_fallback(
+            f"{robobo_base}/Back_L", f"{robobo_fallback}/Back_L"
+        )
+        self._ir_script = get_childscript_with_fallback(
+            f"{robobo_base}/IR_Back_C", f"{robobo_fallback}/IR_Back_C"
+        )
+        self._pan_motor_script = get_childscript_with_fallback(
+            f"{robobo_base}/Pan_Motor", f"{robobo_fallback}/Pan_Motor"
+        )
+        self._tilt_motor_script = get_childscript_with_fallback(
+            f"{robobo_base}/Pan_Motor/Pan_Respondable/Tilt_Motor",
+            f"{robobo_fallback}/Pan_Motor/Pan_Respondable/Tilt_Motor",
+        )
+        self._smartphone_script = get_childscript_with_fallback(
+            f"{robobo_base}/Pan_Motor/Pan_Respondable/Tilt_Motor/Smartphone_Respondable",
+            f"{robobo_fallback}/Pan_Motor/Pan_Respondable/Tilt_Motor/Smartphone_Respondable",
+        )
+        self._smartphone_camera = get_object_with_fallback(
+            f"{robobo_base}/Pan_Motor/Pan_Respondable/Tilt_Motor/Smartphone_Respondable/Smartphone_camera",
+            f"{robobo_fallback}/Pan_Motor/Pan_Respondable/Tilt_Motor/Smartphone_Respondable/Smartphone_camera",
+        )
+
+        # Optional base and food objects
         try:
             self._base = self._get_object("/Base")
             self._base_script = self._get_childscript("/Base")
@@ -552,7 +586,9 @@ class SimulationRobobo(IRobobo):
             self._food = self._get_object("/Food")
             self._food_script = self._get_childscript("/Food")
         except AttributeError:
+            self._food = None
             self._food_script = None
+
 
     def _get_object(self, name: str) -> int:
         # CoppeliaSim is a mess sometimes.
