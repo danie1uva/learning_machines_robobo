@@ -11,7 +11,10 @@ from gym import spaces
 from typing import Tuple
 import time
 
-import wandb  # For logging if needed
+#distance .18 robot and box if in the arm
+#center & lower part img (check opvlakte)
+
+import wandb  
 
 from robobo_interface import SimulationRobobo
 from robobo_interface import Orientation, Position
