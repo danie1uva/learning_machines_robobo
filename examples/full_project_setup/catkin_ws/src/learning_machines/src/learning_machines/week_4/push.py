@@ -207,7 +207,7 @@ class PushEnv(gym.Env):
         frame = self.rob.read_image_front()
         if self._camera_collision_detected(frame):
             obs = self._compute_observation()
-            return obs, -20.0, True, {}
+            return obs, -50.0, True, {}
 
         obs = self._compute_observation()
         reward, done = self._compute_reward_and_done(obs)
