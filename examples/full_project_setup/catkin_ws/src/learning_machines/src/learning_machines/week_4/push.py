@@ -31,7 +31,7 @@ class PPONetwork(nn.Module):
         self.actor = nn.Sequential(
             nn.Linear(128, 64),
             nn.ReLU(),
-            nn.Linear(64, action_dim * 2)  # mean + log_std
+            nn.Linear(64, action_dim * 2)
         )
         
         # Initialize log_std parameters
@@ -50,6 +50,7 @@ class PPONetwork(nn.Module):
         shared_out = self.shared(x)
         return self.actor(shared_out), self.critic(shared_out)
 
+
 # ----------------------------
 # PPO AGENT
 # ----------------------------
@@ -62,13 +63,14 @@ class PPOAgent:
         self.batch_size = 128
         self.memory = deque(maxlen=20000)
         self.max_grad_norm = 0.5
+        self.entropy_coef = 0.1  # Increased entropy for exploration
 
     def get_action(self, state):
         state_t = torch.FloatTensor(state).unsqueeze(0)
         with torch.no_grad():
             actor_out, value = self.policy(state_t)
         mean, log_std = actor_out.chunk(2, dim=-1)
-        log_std = torch.clamp(log_std, min=-20, max=2)  # Prevent extreme values
+        log_std = torch.clamp(log_std, min=-20, max=2)
         std = log_std.exp()
         dist = Normal(mean, std)
         action = dist.sample()
@@ -84,12 +86,11 @@ class PPOAgent:
         batch = random.sample(self.memory, self.batch_size)
         states, actions, old_log_probs, returns, advantages = map(torch.FloatTensor, zip(*batch))
 
-        # Normalize advantages
         advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
         actor_out, critic_out = self.policy(states)
         mean, log_std = actor_out.chunk(2, dim=-1)
-        log_std = torch.clamp(log_std, min=-20, max=2)  # Clamp during training
+        log_std = torch.clamp(log_std, min=-20, max=2)
         std = log_std.exp()
         dist = Normal(mean, std)
 
@@ -101,7 +102,7 @@ class PPOAgent:
 
         actor_loss = -torch.min(surr1, surr2).mean()
         critic_loss = 0.5 * (returns - critic_out.squeeze()).pow(2).mean()
-        entropy_loss = -0.01 * dist.entropy().mean()
+        entropy_loss = -self.entropy_coef * dist.entropy().mean()  # Increased entropy coefficient
 
         loss = actor_loss + critic_loss + entropy_loss
 
@@ -111,7 +112,7 @@ class PPOAgent:
         self.optimizer.step()
 
     def train(self, env, episodes=1000):
-        wandb.init(project="push-task", name="PPO_Pusher_GroundTruth", config={"episodes": episodes})
+        wandb.init(project="push-task", name="PPO_Pusher_Improved", config={"episodes": episodes})
         best_reward = -float("inf")
 
         for ep in range(episodes):
@@ -119,14 +120,19 @@ class PPOAgent:
             done = False
             total_reward = 0.0
             step_count = 0
+            last_positions = deque(maxlen=10)  # Track recent positions for circling detection
 
             while not done:
                 action, old_log_prob, value = self.get_action(state)
                 next_state, reward, done, _ = env.step(action)
+                
+                # Add position to history for circling detection
+                current_pos = env.rob.get_position()
+                last_positions.append((current_pos.x, current_pos.y))
+                
                 total_reward += reward
                 step_count += 1
 
-                # Compute advantage
                 with torch.no_grad():
                     _, next_value = self.policy(torch.FloatTensor(next_state).unsqueeze(0))
                 advantage = reward + self.gamma * (0 if done else next_value.item()) - value.item()
@@ -135,10 +141,14 @@ class PPOAgent:
                 state = next_state
                 self.update()
 
+                # Gradually reduce entropy to balance exploration/exploitation
+                self.entropy_coef = max(0.01, self.entropy_coef * 0.995)
+
             wandb.log({
                 "episode": ep,
                 "episode_reward": total_reward,
-                "episode_length": step_count
+                "episode_length": step_count,
+                "entropy_coef": self.entropy_coef
             })
 
             if total_reward > best_reward:
@@ -146,7 +156,6 @@ class PPOAgent:
                 torch.save(self.policy.state_dict(), "best_pusher.pth")
 
             print(f"[Episode {ep}] Total Reward: {total_reward:.2f} | Best: {best_reward:.2f}")
-
 # ----------------------------
 # ENVIRONMENT
 # ----------------------------
@@ -164,6 +173,7 @@ class PushEnv(gym.Env):
         self.observation_space = spaces.Box(
             low=0.0, high=1000.0, shape=(13,), dtype=np.float32
         )
+        self.position_history = deque(maxlen=20)  # For circling detection
 
     def reset(self):
         self.rob.stop_simulation()
@@ -172,6 +182,7 @@ class PushEnv(gym.Env):
         self.episode_step = 0
         self.last_robot_pos = self.rob.get_position()
         self.last_robot_ori = self.rob.get_orientation()
+        self.position_history.clear()
         return self._compute_observation()
 
     def step(self, action):
@@ -183,12 +194,19 @@ class PushEnv(gym.Env):
         right_speed = float(action[1]) * 100.0
         self.rob.move_blocking(left_speed, right_speed, 300)
 
+        # Add current position to history
+        current_pos = self.rob.get_position()
+        self.position_history.append((current_pos.x, current_pos.y))
+
         # Collision checks
         ir_raw = self.rob.read_irs()
         ir_raw = [x/1000 if x is not None else 1.0 for x in ir_raw]
-        if any(val > 0.65 for val in ir_raw):
-            obs = self._compute_observation()
-            return obs, -50.0, True, {}
+        
+        # Only check IR collision if not close to puck
+        if not self._should_ignore_collision():
+            if any(val > 0.65 for val in ir_raw):
+                obs = self._compute_observation()
+                return obs, -50.0, True, {}
 
         frame = self.rob.read_image_front()
         if self._camera_collision_detected(frame):
@@ -214,27 +232,39 @@ class PushEnv(gym.Env):
     # ----------------------------
     # REWARD ENGINE
     # ----------------------------
+
+    def _should_ignore_collision(self):
+        """Check if we should ignore IR collisions due to being near the puck"""
+        puck_close = self._distance_robot_to_puck() < 0.3
+        camera_detection = self._detect_red_areas(self.rob.read_image_front()) is not None
+        return puck_close or camera_detection
+
     def _compute_reward_and_done(self, obs):
         reward = -0.1  # Step penalty
         done = False
         reward_components = {}
 
-        # 1) Robot->Puck Proximity (Ground Truth)
+        # 1) Robot->Puck Proximity
         dist_rp = self._distance_robot_to_puck()
-        rp_shaping = 5.0 / (1.0 + dist_rp)
+        rp_shaping = 8.0 / (1.0 + dist_rp)  # Increased shaping
         reward += rp_shaping
         reward_components['rp_shaping'] = rp_shaping
 
-        # 2) Camera Red Box Presence
+        # 2) Camera Red Box Presence (fixed calculation)
         puck_box = obs[5:9]
         actual_w = puck_box[2] * self.camera_width
         actual_h = puck_box[3] * self.camera_height
         puck_area = actual_w * actual_h
-        area_shaping = min(puck_area / 30000.0, 1.0) * 3.0  # Up to +3.0
-        reward += area_shaping
-        reward_components['area_shaping'] = area_shaping
+        
+        # Only reward if actually detecting the puck
+        if puck_area > 100:  # Minimum area threshold
+            area_shaping = min(puck_area / 15000.0, 3.0)  # Increased reward
+            reward += area_shaping
+            reward_components['area_shaping'] = area_shaping
+        else:
+            reward_components['area_shaping'] = 0.0
 
-        # 3) Camera Puck-Green Alignment
+        # 3) Camera Alignment
         green_box = obs[9:13]
         if puck_box[2] > 0 and green_box[2] > 0:
             puck_cx = puck_box[0] + puck_box[2]/2
@@ -242,21 +272,32 @@ class PushEnv(gym.Env):
             green_cx = green_box[0] + green_box[2]/2
             green_cy = green_box[1] + green_box[3]/2
             dist_cam = math.sqrt((puck_cx - green_cx)**2 + (puck_cy - green_cy)**2)
-            camera_shaping = max(0, 100 - dist_cam) * 0.02  # Up to +2.0
+            camera_shaping = max(0, 1.5 - dist_cam) * 2.0  # Increased reward
             reward += camera_shaping
             reward_components['camera_shaping'] = camera_shaping
 
-        # 4) Puck->Base Proximity (Ground Truth)
+        # 4) Puck->Base Proximity
         dist_gt = self._distance_puck_to_base()
-        gt_shaping = 5.0 / (1.0 + dist_gt)  # Up to +5.0
+        gt_shaping = 8.0 / (1.0 + dist_gt)  # Increased shaping
         reward += gt_shaping
         reward_components['gt_shaping'] = gt_shaping
 
-        # 5) Success Condition
+        # 5) Success Bonus
         if self.rob.base_detects_food():
-            reward += 200.0  # Large success bonus
+            reward += 300.0  # Increased success bonus
             done = True
-            reward_components['success'] = 200.0
+            reward_components['success'] = 300.0
+
+        # 6) Circling Penalty
+        if len(self.position_history) >= 10:
+            # Calculate movement variance
+            positions = np.array(self.position_history)
+            var_x = np.var(positions[:,0])
+            var_y = np.var(positions[:,1])
+            if var_x < 0.01 and var_y < 0.01:  # Low variance = circling
+                circling_penalty = -2.0
+                reward += circling_penalty
+                reward_components['circling_penalty'] = circling_penalty
 
         print(f"[REWARD] Components: { {k: round(v, 2) for k, v in reward_components.items()} }")
         return reward, done
@@ -278,15 +319,31 @@ class PushEnv(gym.Env):
             self._normalize_box(green_box)
         ])
 
+    # ----------------------------
+    # IMPROVED COLOR DETECTION
+    # ----------------------------
     def _detect_red_areas(self, frame):
         hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-        lower = np.array([0, 100, 100])
-        upper = np.array([10, 255, 255])
-        mask = cv2.inRange(hsv, lower, upper)
+        lower_red1 = np.array([0, 50, 50])
+        upper_red1 = np.array([10, 255, 255])
+        lower_red2 = np.array([170, 50, 50])
+        upper_red2 = np.array([180, 255, 255])
+        
+        mask1 = cv2.inRange(hsv, lower_red1, upper_red1)
+        mask2 = cv2.inRange(hsv, lower_red2, upper_red2)
+        mask = cv2.bitwise_or(mask1, mask2)
+        
+        # Morphological operations to reduce noise
+        kernel = np.ones((5,5), np.uint8)
+        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
+        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+        
         contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         if contours:
             c = max(contours, key=cv2.contourArea)
-            return cv2.boundingRect(c)
+            x,y,w,h = cv2.boundingRect(c)
+            if w*h > 100:  # Minimum area threshold
+                return (x,y,w,h)
         return None
 
     def _detect_green_areas(self, frame):
@@ -312,7 +369,7 @@ class PushEnv(gym.Env):
     def _camera_collision_detected(self, frame):
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         white_ratio = np.mean(gray > 230)
-        return white_ratio > 0.6
+        return white_ratio > 0.7
 
     def _distance_puck_to_base(self):
         food_pos = self.rob.get_food_position()
