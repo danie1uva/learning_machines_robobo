@@ -63,7 +63,7 @@ class PPOAgent:
         self.batch_size = 128
         self.memory = deque(maxlen=20000)
         self.max_grad_norm = 0.5
-        self.entropy_coef = 0.1  # Increased entropy for exploration
+        self.entropy_coef = 0.01  # Increased entropy for exploration
 
     def get_action(self, state):
         state_t = torch.FloatTensor(state).unsqueeze(0)
@@ -141,14 +141,10 @@ class PPOAgent:
                 state = next_state
                 self.update()
 
-                # Gradually reduce entropy to balance exploration/exploitation
-                self.entropy_coef = max(0.01, self.entropy_coef * 0.995)
-
             wandb.log({
                 "episode": ep,
                 "episode_reward": total_reward,
-                "episode_length": step_count,
-                "entropy_coef": self.entropy_coef
+                "episode_length": step_count
             })
 
             if total_reward > best_reward:
@@ -204,7 +200,7 @@ class PushEnv(gym.Env):
         
         # Only check IR collision if not close to puck
         if not self._should_ignore_collision():
-            if any(val > 0.65 for val in ir_raw):
+            if any(val > 0.60 for val in ir_raw):
                 obs = self._compute_observation()
                 return obs, -50.0, True, {}
 
@@ -237,6 +233,10 @@ class PushEnv(gym.Env):
         """Check if we should ignore IR collisions due to being near the puck"""
         puck_close = self._distance_robot_to_puck() < 0.3
         camera_detection = self._detect_red_areas(self.rob.read_image_front()) is not None
+        if puck_close:
+            print("[DEBUG] Close to puck - ignoring IR collisions")
+        if camera_detection:
+            print("[DEBUG] Puck detected in camera - ignoring IR collisions")
         return puck_close or camera_detection
 
     def _compute_reward_and_done(self, obs):
@@ -289,15 +289,27 @@ class PushEnv(gym.Env):
             reward_components['success'] = 300.0
 
         # 6) Circling Penalty
-        if len(self.position_history) >= 10:
-            # Calculate movement variance
+        if len(self.position_history) >= 8:
             positions = np.array(self.position_history)
-            var_x = np.var(positions[:,0])
-            var_y = np.var(positions[:,1])
-            if var_x < 0.01 and var_y < 0.01:  # Low variance = circling
-                circling_penalty = -2.0
-                reward += circling_penalty
-                reward_components['circling_penalty'] = circling_penalty
+            
+            # Calculate net displacement
+            start_pos = positions[0]
+            end_pos = positions[-1]
+            displacement = np.linalg.norm(end_pos - start_pos)
+            
+            # Calculate total distance traveled
+            distances = np.linalg.norm(positions[1:] - positions[:-1], axis=1)
+            total_distance = np.sum(distances)
+            
+            # Circling ratio: displacement / total_distance
+            if total_distance > 0.5:  # Only check if meaningful movement
+                circling_ratio = displacement / total_distance
+                
+                # High total distance + low displacement = circling
+                if circling_ratio < 0.2:
+                    circling_penalty = -1.0 * (1 - circling_ratio)
+                    reward += circling_penalty
+                    reward_components['circling_penalty'] = circling_penalty
 
         print(f"[REWARD] Components: { {k: round(v, 2) for k, v in reward_components.items()} }")
         return reward, done
@@ -343,6 +355,7 @@ class PushEnv(gym.Env):
             c = max(contours, key=cv2.contourArea)
             x,y,w,h = cv2.boundingRect(c)
             if w*h > 100:  # Minimum area threshold
+                print(f"[DEBUG] Red detected: {w}x{h} area at ({x},{y})")
                 return (x,y,w,h)
         return None
 
@@ -354,7 +367,10 @@ class PushEnv(gym.Env):
         contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         if contours:
             c = max(contours, key=cv2.contourArea)
-            return cv2.boundingRect(c)
+            # Change from minAreaRect to boundingRect
+            x, y, w, h = cv2.boundingRect(c)
+            print(f"[DEBUG] Green platform detected: {w}x{h} area at ({x},{y})")
+            return (x, y, w, h)
         return None
 
     def _normalize_box(self, box):
@@ -367,9 +383,20 @@ class PushEnv(gym.Env):
         ], dtype=np.float32)
 
     def _camera_collision_detected(self, frame):
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        white_ratio = np.mean(gray > 230)
-        return white_ratio > 0.7
+        # Convert to HSV for better white detection
+        hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+        
+        # Define white range in HSV (hue doesn't matter for white)
+        lower_white = np.array([0, 0, 200])
+        upper_white = np.array([255, 30, 255])
+        
+        mask = cv2.inRange(hsv, lower_white, upper_white)
+        white_ratio = np.mean(mask > 0)
+        
+        if white_ratio > 0.85:
+            print(f"[COLLISION] White-out detected: {white_ratio*100:.1f}% white pixels")
+            return True
+        return False
 
     def _distance_puck_to_base(self):
         food_pos = self.rob.get_food_position()
@@ -396,7 +423,7 @@ def train_push_agent():
     rob = SimulationRobobo()
     env = PushEnv(rob)
     agent = PPOAgent(state_dim=13, action_dim=2)
-    agent.train(env, episodes=500)
+    agent.train(env, episodes=2000)
 
 def run_push_agent():
     rob = SimulationRobobo()
