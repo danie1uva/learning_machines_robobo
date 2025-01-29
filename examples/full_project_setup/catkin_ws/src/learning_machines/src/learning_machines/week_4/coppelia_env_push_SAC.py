@@ -56,6 +56,7 @@ class CoppeliaSimEnv(gym.Env):
         self.episode_count = 0
         self.total_step_count = 0
         self.steps_in_episode = 0
+        self.gathered_puck = 0
 
         frame = self.rob.read_image_front()
         self.camera_height, self.camera_width = frame.shape[:2]
@@ -86,6 +87,7 @@ class CoppeliaSimEnv(gym.Env):
 
         self.episode_count += 1
         self.steps_in_episode = 0
+        self.gathered_puck = 0
         self.puck_collected = False
         self.done = False
 
@@ -176,21 +178,24 @@ class CoppeliaSimEnv(gym.Env):
         # If the puck was collected but is no longer in contact, apply penalty and lose the puck
         if self.puck_collected and not self._puck_contact(puck_box):
             self.puck_collected = False
-            reward -= 2.0  # Penalty for losing the box
+            reward -= 10.0  # Penalty for losing the box
 
         if not self.puck_collected:
             # Reward for being closer to the puck
             dist_puck = self._distance_of_robot_to_puck()
-            reward += self._distance_reward(dist_puck, alpha=3.0, min_dist=0.1)
+            reward += 5*self._distance_reward(dist_puck, alpha=3.0, min_dist=0.1)
 
             # If contact with the puck is established
             if self._puck_contact(puck_box):
                 self.puck_collected = True
+                self.gathered_puck += 1
                 reward += 5.0  # Small bonus for collecting the puck
+                if self.gathered_puck > 3:
+                    done = True
         else:
             # Reward for being closer to the green zone
             dist_zone = self._distance_to_green_zone()
-            reward += self._distance_reward(dist_zone, alpha=3.0, min_dist=0.0)
+            reward += 10*self._distance_reward(dist_zone, alpha=3.0, min_dist=0.0)
 
             # If the puck is successfully in the green zone
             if self._puck_in_green_zone():
