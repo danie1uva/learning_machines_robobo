@@ -49,6 +49,7 @@ class CoppeliaSimEnv(gym.Env):
         self.init_pos = rob.get_position()
         self.init_ori = rob.get_orientation()
         self.puck_init_pos = rob.get_food_position()
+        self.rob.set_phone_tilt_blocking(108, 100)
 
         self.state = None
         self.done = False
