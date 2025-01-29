@@ -185,7 +185,7 @@ class PushEnv(gym.Env):
 
     def reset(self):
         self.rob.stop_simulation()
-        self.rob.play_simulation()
+        self.rob._sim.setBoolParam(self.rob._sim.boolparam_simulation_real_time, False)
         time.sleep(0.5)
 
         self.episode_step = 0
@@ -307,7 +307,7 @@ class PushEnv(gym.Env):
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         white_thresh = 230
         white_ratio = np.mean(gray > white_thresh)
-        return (white_ratio > 0.3)
+        return (white_ratio > 0.6)
 
     def _distance_puck_to_base(self):
         """
