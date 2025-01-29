@@ -63,7 +63,7 @@ class PPOAgent:
         self.batch_size = 128
         self.memory = deque(maxlen=20000)
         self.max_grad_norm = 0.5
-        self.entropy_coef = 0.01  # Increased entropy for exploration
+        self.entropy_coef = 0.01  
 
     def get_action(self, state):
         state_t = torch.FloatTensor(state).unsqueeze(0)
@@ -175,6 +175,8 @@ class PushEnv(gym.Env):
         self.rob.stop_simulation()
         self.rob.play_simulation()
         time.sleep(0.5)
+        # Set phone tilt to look downwards
+        self.rob.set_phone_tilt_blocking(140, 140)
         self.episode_step = 0
         self.last_robot_pos = self.rob.get_position()
         self.last_robot_ori = self.rob.get_orientation()
@@ -198,16 +200,31 @@ class PushEnv(gym.Env):
         ir_raw = self.rob.read_irs()
         ir_raw = [x/1000 if x is not None else 1.0 for x in ir_raw]
         
-        # Only check IR collision if not close to puck
-        if not self._should_ignore_collision():
-            if any(val > 0.60 for val in ir_raw):
+        # Split sensors into back and front groups
+        back_irs = [ir_raw[0], ir_raw[1], ir_raw[6]]  # BackL, BackR, BackC
+        front_irs = [ir_raw[2], ir_raw[3], ir_raw[4], ir_raw[5], ir_raw[7]]  # FrontL, FrontR, FrontC, FrontRR, FrontLL
+        
+        # Always check back sensors first
+        if any(val > 0.50 for val in back_irs):
+            print(f"[COLLISION] Back sensor triggered: {back_irs}")
+            obs = self._compute_observation()
+            return obs, -300.0, True, {}
+
+        # Conditionally check front sensors
+        if not self._should_ignore_front_collision():
+            if any(val > 0.50 for val in front_irs):
+                print(f"[COLLISION] Front sensor triggered: {front_irs}")
                 obs = self._compute_observation()
-                return obs, -50.0, True, {}
+                return obs, -100.0, True, {}
+        else:
+            print("[DEBUG] Ignoring front IR collisions due to puck proximity")
+
+
 
         frame = self.rob.read_image_front()
         if self._camera_collision_detected(frame):
             obs = self._compute_observation()
-            return obs, -50.0, True, {}
+            return obs, -30.0, True, {}
 
         obs = self._compute_observation()
         reward, done = self._compute_reward_and_done(obs)
@@ -216,6 +233,7 @@ class PushEnv(gym.Env):
             done = True
 
         return obs, reward, done, {}
+
 
     def render(self, mode='human'):
         frame = self.rob.read_image_front()
@@ -228,41 +246,56 @@ class PushEnv(gym.Env):
     # ----------------------------
     # REWARD ENGINE
     # ----------------------------
-
-    def _should_ignore_collision(self):
-        """Check if we should ignore IR collisions due to being near the puck"""
+    def _should_ignore_front_collision(self):
+        """Check if we should ignore front IR collisions due to being near the puck"""
         puck_close = self._distance_robot_to_puck() < 0.3
         camera_detection = self._detect_red_areas(self.rob.read_image_front()) is not None
+        
         if puck_close:
-            print("[DEBUG] Close to puck - ignoring IR collisions")
+            print("[DEBUG] Close to puck - ignoring front IR collisions")
         if camera_detection:
-            print("[DEBUG] Puck detected in camera - ignoring IR collisions")
+            print("[DEBUG] Puck detected in camera - ignoring front IR collisions")
+            
         return puck_close or camera_detection
 
     def _compute_reward_and_done(self, obs):
-        reward = -0.1  # Step penalty
+        reward = -0.2  # Increased step penalty
         done = False
         reward_components = {}
 
         # 1) Robot->Puck Proximity
         dist_rp = self._distance_robot_to_puck()
-        rp_shaping = 8.0 / (1.0 + dist_rp)  # Increased shaping
+        if dist_rp < 0.5:
+            rp_shaping = 12.0 / (1.0 + dist_rp)  # Higher reward when close
+        else:
+            rp_shaping = 8.0 / (1.0 + dist_rp)
         reward += rp_shaping
         reward_components['rp_shaping'] = rp_shaping
 
-        # 2) Camera Red Box Presence (fixed calculation)
+        # 2) Camera Red Box Presence and Centering
         puck_box = obs[5:9]
+        actual_x = puck_box[0] * self.camera_width
+        actual_y = puck_box[1] * self.camera_height
         actual_w = puck_box[2] * self.camera_width
         actual_h = puck_box[3] * self.camera_height
         puck_area = actual_w * actual_h
         
-        # Only reward if actually detecting the puck
-        if puck_area > 100:  # Minimum area threshold
-            area_shaping = min(puck_area / 15000.0, 3.0)  # Increased reward
+        if puck_area > 100:
+            area_reward = min(puck_area / 15000.0, 3.0)
+            puck_cx = actual_x + actual_w / 2
+            puck_cy = actual_y + actual_h / 2
+            img_center_x = self.camera_width / 2
+            img_center_y = self.camera_height / 2
+            centering_dist = math.sqrt((puck_cx - img_center_x)**2 + (puck_cy - img_center_y)**2)
+            max_dist = math.sqrt((self.camera_width)**2 + (self.camera_height)**2)
+            centering_reward = 2.0 * (1.0 - (centering_dist / max_dist))
+            area_shaping = area_reward + centering_reward
             reward += area_shaping
             reward_components['area_shaping'] = area_shaping
         else:
-            reward_components['area_shaping'] = 0.0
+            area_shaping = -0.5  # Penalty for no detection
+            reward += area_shaping
+            reward_components['area_shaping'] = area_shaping
 
         # 3) Camera Alignment
         green_box = obs[9:13]
@@ -272,21 +305,24 @@ class PushEnv(gym.Env):
             green_cx = green_box[0] + green_box[2]/2
             green_cy = green_box[1] + green_box[3]/2
             dist_cam = math.sqrt((puck_cx - green_cx)**2 + (puck_cy - green_cy)**2)
-            camera_shaping = max(0, 1.5 - dist_cam) * 2.0  # Increased reward
+            camera_shaping = max(0, 2.0 - dist_cam) * 2.0  # Increased reward
             reward += camera_shaping
             reward_components['camera_shaping'] = camera_shaping
 
         # 4) Puck->Base Proximity
         dist_gt = self._distance_puck_to_base()
-        gt_shaping = 8.0 / (1.0 + dist_gt)  # Increased shaping
+        if dist_rp < 0.5:
+            gt_shaping = 12.0 / (1.0 + dist_gt)  # Higher reward when close to puck
+        else:
+            gt_shaping = 8.0 / (1.0 + dist_gt)
         reward += gt_shaping
         reward_components['gt_shaping'] = gt_shaping
 
         # 5) Success Bonus
         if self.rob.base_detects_food():
-            reward += 300.0  # Increased success bonus
+            reward += 500.0  # Increased success bonus
             done = True
-            reward_components['success'] = 300.0
+            reward_components['success'] = 500.0
 
         # 6) Circling Penalty
         if len(self.position_history) >= 8:
@@ -304,10 +340,8 @@ class PushEnv(gym.Env):
             # Circling ratio: displacement / total_distance
             if total_distance > 0.5:  # Only check if meaningful movement
                 circling_ratio = displacement / total_distance
-                
-                # High total distance + low displacement = circling
-                if circling_ratio < 0.2:
-                    circling_penalty = -1.0 * (1 - circling_ratio)
+                if circling_ratio < 0.1:  # More sensitive threshold
+                    circling_penalty = -200.0 * (1 - circling_ratio)  # Increased penalty
                     reward += circling_penalty
                     reward_components['circling_penalty'] = circling_penalty
 
@@ -336,17 +370,17 @@ class PushEnv(gym.Env):
     # ----------------------------
     def _detect_red_areas(self, frame):
         hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-        lower_red1 = np.array([0, 50, 50])
+        lower_red1 = np.array([0, 40, 40])  # Adjusted thresholds
         upper_red1 = np.array([10, 255, 255])
-        lower_red2 = np.array([170, 50, 50])
+        lower_red2 = np.array([170, 40, 40])
         upper_red2 = np.array([180, 255, 255])
         
         mask1 = cv2.inRange(hsv, lower_red1, upper_red1)
         mask2 = cv2.inRange(hsv, lower_red2, upper_red2)
         mask = cv2.bitwise_or(mask1, mask2)
         
-        # Morphological operations to reduce noise
-        kernel = np.ones((5,5), np.uint8)
+        # Improved morphological operations
+        kernel = np.ones((7,7), np.uint8)
         mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
         mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
         
@@ -354,8 +388,7 @@ class PushEnv(gym.Env):
         if contours:
             c = max(contours, key=cv2.contourArea)
             x,y,w,h = cv2.boundingRect(c)
-            if w*h > 100:  # Minimum area threshold
-                print(f"[DEBUG] Red detected: {w}x{h} area at ({x},{y})")
+            if w*h > 100:
                 return (x,y,w,h)
         return None
 
@@ -382,8 +415,9 @@ class PushEnv(gym.Env):
             h/self.camera_height
         ], dtype=np.float32)
 
+
     def _camera_collision_detected(self, frame):
-        # Convert to HSV for better white detection
+        # More sensitive white detection with adjusted thresholds
         hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
         
         # Define white range in HSV (hue doesn't matter for white)
@@ -393,28 +427,43 @@ class PushEnv(gym.Env):
         mask = cv2.inRange(hsv, lower_white, upper_white)
         white_ratio = np.mean(mask > 0)
         
-        if white_ratio > 0.85:
+        # Lower threshold for collision detection
+        if white_ratio > 0.95:
             print(f"[COLLISION] White-out detected: {white_ratio*100:.1f}% white pixels")
             return True
         return False
 
     def _distance_puck_to_base(self):
+        # Get precise positions using simulation API
         food_pos = self.rob.get_food_position()
         base_pos = self.rob.get_base_position()
-        return math.sqrt(
+        
+        # Calculate 2D distance (ignore height)
+        distance = math.sqrt(
             (food_pos.x - base_pos.x)**2 +
-            (food_pos.y - base_pos.y)**2 +
-            (food_pos.z - base_pos.z)**2
+            (food_pos.y - base_pos.y)**2
         )
+        print(f"[DISTANCE] Puck to base: {distance:.2f}m")
+        return distance
 
     def _distance_robot_to_puck(self):
+        # Get positions from simulation
         robot_pos = self.rob.get_position()
         food_pos = self.rob.get_food_position()
-        return math.sqrt(
+        
+        # Calculate 2D distance with height consideration
+        distance = math.sqrt(
             (robot_pos.x - food_pos.x)**2 +
-            (robot_pos.y - food_pos.y)**2 +
-            (robot_pos.z - food_pos.z)**2
+            (robot_pos.y - food_pos.y)**2
         )
+        # Add small epsilon to avoid division by zero
+        return distance + 1e-3
+
+    def _get_robot_heading_vector(self):
+        # Calculate heading vector from orientation
+        orientation = self.rob.read_orientation()
+        yaw = math.radians(orientation.yaw)
+        return math.cos(yaw), math.sin(yaw)
 
 # ----------------------------
 # MAIN EXECUTION
@@ -422,12 +471,25 @@ class PushEnv(gym.Env):
 def train_push_agent():
     rob = SimulationRobobo()
     env = PushEnv(rob)
-    agent = PPOAgent(state_dim=13, action_dim=2)
-    agent.train(env, episodes=2000)
+    
+    # Initialize agent with modified parameters
+    agent = PPOAgent(
+        state_dim=13,
+        action_dim=2
+    )
+    
+    # Train with progress tracking
+    try:
+        agent.train(env, episodes=2000)
+    except KeyboardInterrupt:
+        print("Training interrupted - saving latest model")
+        torch.save(agent.policy.state_dict(), "interrupted_pusher.pth")
 
 def run_push_agent():
     rob = SimulationRobobo()
     env = PushEnv(rob)
+    
+    # Load best model
     policy = PPONetwork(13, 2)
     policy.load_state_dict(torch.load("best_pusher.pth"))
     policy.eval()
@@ -436,21 +498,34 @@ def run_push_agent():
     done = False
     total_reward = 0.0
 
+    # Add performance monitoring
+    start_time = time.time()
+    success_count = 0
+    collision_count = 0
+
     while not done:
         with torch.no_grad():
-            actor_out, _ = policy(torch.FloatTensor(state).unsqueeze(0))
-            mean, log_std = actor_out.chunk(2, dim=-1)
-            log_std = torch.clamp(log_std, min=-20, max=2)
-            std = log_std.exp()
-            dist = Normal(mean, std)
-            action = dist.sample().numpy()[0]
-
+            action = policy(torch.FloatTensor(state).unsqueeze(0))[0][0].numpy()
+        
         next_state, reward, done, _ = env.step(action)
         total_reward += reward
         state = next_state
         env.render()
 
-    print(f"Final reward: {total_reward:.2f}")
+        # Track performance metrics
+        if reward >= 500:  # Success condition
+            success_count += 1
+        if reward <= -50:  # Collision condition
+            collision_count += 1
+
+    # Print performance summary
+    duration = time.time() - start_time
+    print(f"\nPerformance Summary:")
+    print(f"Total reward: {total_reward:.2f}")
+    print(f"Successes: {success_count}")
+    print(f"Collisions: {collision_count}")
+    print(f"Duration: {duration:.2f} seconds")
+    
     env.close()
 
 if __name__ == "__main__":
