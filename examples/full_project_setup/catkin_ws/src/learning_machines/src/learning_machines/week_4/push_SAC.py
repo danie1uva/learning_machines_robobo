@@ -8,7 +8,7 @@ from stable_baselines3.common.callbacks import BaseCallback
 
 from collections import deque
 
-from .coppelia_env_push_SAC import CoppeliaSimEnv  # Ensure correct import path
+from .coppelia_env_push_SAC import CoppeliaSimEnv, HardwareInferenceEnv  # Ensure correct import path
 from robobo_interface import IRobobo, SimulationRobobo, HardwareRobobo
 
 class PerformanceBasedRandomizationCallback(BaseCallback):
@@ -143,11 +143,10 @@ def train_sac_dynamic_randomization(rob: IRobobo):
     rob.play_simulation()
 
     # Initialize Environment
-    env = CoppeliaSimEnv(
-        rob=rob,
-        randomize_frequency=0,  # Start with no randomization
-        puck_pos_range=0.4
+    env = HardwareInferenceEnv(
+        rob=rob
     )
+
     env = Monitor(env)
 
     # Initialize SAC Model
@@ -180,7 +179,35 @@ def train_sac_dynamic_randomization(rob: IRobobo):
     wandb.save(f"{model_save_name}.zip")
     print("Training complete. Model saved and logged to wandb.")
 
-def run_sac_evaluation(rob: IRobobo, model_path: str):
+def run_sac_evaluation_hardware(rob: IRobobo, model_path: str):
+    """
+    Evaluates a trained SAC model in a hardware environment.
+    :param rob: Instance of the robot interface.
+    :param model_path: Path to the saved SAC model.
+    """
+
+    env = CoppeliaSimEnv(
+        rob=rob,
+        randomize_frequency=5,  # Example frequency; adjust as needed
+        puck_pos_range=0.4
+    )
+    env = Monitor(env)
+
+    # Load the trained SAC model
+    model = SAC.load(model_path, env=env)
+
+    obs = env.reset()
+    done = False
+    total_reward = 0.0
+    while not done:
+        # Use deterministic actions for evaluation
+        action, _ = model.predict(obs, deterministic=True)
+        obs, reward, done, info = env.step(action)
+        total_reward += reward
+
+    print(f"Evaluation complete. Total Reward: {total_reward}")
+
+def run_sac_evaluation_sim(rob: IRobobo, model_path: str):
     """
     Evaluates a trained SAC model on the environment.
     :param rob: Instance of the robot interface.
@@ -198,8 +225,9 @@ def run_sac_evaluation(rob: IRobobo, model_path: str):
     env = CoppeliaSimEnv(
         rob=rob,
         randomize_frequency=5,  # Example frequency; adjust as needed
-        puck_pos_range=0.4
+        puck_pos_range=0 # No randomization during evaluation
     )
+    
     env = Monitor(env)
 
     # Load the trained SAC model

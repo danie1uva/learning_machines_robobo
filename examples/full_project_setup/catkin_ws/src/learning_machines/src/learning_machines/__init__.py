@@ -51,11 +51,14 @@ from .week_4.coppelia_env_push_DQN import (
 )
 
 from .week_4.push_SAC import (
-    train_sac_dynamic_randomization
+    train_sac_dynamic_randomization,
+    run_sac_evaluation_hardware,
+    run_sac_evaluation_sim
 )
 
 from .week_4.coppelia_env_push_SAC import (
-    CoppeliaSimEnv
+    CoppeliaSimEnv,
+    HardwareInferenceEnv
 )
 
 __all__ = (
@@ -77,5 +80,8 @@ __all__ = (
     "train_dqn_two_stage",
     "CoppeliaSimEnvDQN",
     "train_sac_dynamic_randomization",
-    "CoppeliaSimEnv"
+    "CoppeliaSimEnv",
+    "HardwareInferenceEnv",
+    "run_sac_evaluation_hardware",
+    "run_sac_evaluation_sim"
     )

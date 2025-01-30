@@ -15,7 +15,9 @@ from learning_machines import (run_all_actions,
                                run_dqn_forage,
                                train_ppo_two_stage,
                                train_dqn_two_stage,
-                               train_sac_dynamic_randomization
+                               train_sac_dynamic_randomization,
+                               run_sac_evaluation_sim,
+                               run_sac_evaluation_hardware
 )
 
 
@@ -73,19 +75,19 @@ if __name__ == "__main__":
         rob = HardwareRobobo(camera=True)
         run_dqn_forage(rob, weights_path)
 
-    elif sys.argv[1] == "--train_push":
-        rob = SimulationRobobo()
-        train_ppo_two_stage(rob)
-    
-    elif sys.argv[1] == '--train_push_DQN':
-        rob = SimulationRobobo()
-        train_dqn_two_stage(rob)
-
     elif sys.argv[1] == '--train_push_SAC':
         rob = SimulationRobobo()
         train_sac_dynamic_randomization(rob)
 
-        
+    elif sys.argv[1] == "--run_push_SAC" and sys.argv[2] == "--simulation":
+        rob = SimulationRobobo()
+        model_path = "/root/catkin_ws/policy.pth"
+        run_sac_evaluation_sim(rob, model_path)
+
+    elif sys.argv[1] == "--run_push_SAC" and sys.argv[2] == "--hardware":
+        rob = HardwareRobobo(camera=True)
+        model_path = "/root/catkin_ws/policy.pth"
+        run_sac_evaluation_hardware(rob, model_path)
 
     else:
         raise ValueError(f"{sys.argv[1]} is not a valid argument.")
