@@ -20,8 +20,8 @@ class PerformanceBasedRandomizationCallback(BaseCallback):
     - Monitors the last 100 episodes' success flags.
     - Stages:
         0) No randomization => success_rate >= 50 => Stage 1
-        1) randomize_frequency=5 => success_rate >= 70 => Stage 2
-        2) randomize_frequency=2 => success_rate >= 80 => Stop training
+        1) randomize_frequency=2 => success_rate >= 80 => Stage 2
+        2) randomize_frequency=1 => success_rate >= 90 => Stop training
     - Each time a new stage is reached:
         - success_history is reset
         - episodes_since_stage_update is reset
@@ -38,9 +38,9 @@ class PerformanceBasedRandomizationCallback(BaseCallback):
         self.episodes_since_stage_update = 0
         self.current_stage = 0  # Index in self.stages
         self.stages = [
-            {'success_rate': 50, 'frequency': 2},  # after 50% success, randomize every 2 episodes
-            {'success_rate': 80, 'frequency': 1},  # after 80% success, randomize every episode
-            {'success_rate': 90, 'frequency': 1},  # after 90% success => final stage => training stops
+            {'success_rate': 50, 'frequency': 1},  # after 50% success, randomize every 2 episodes
+            {'success_rate': 80, 'frequency': 0},  # after 80% success, randomize every episode
+            {'success_rate': 90, 'frequency': 0},  # after 90% success => final stage => training stops
         ]
 
     def _init_callback(self) -> None:

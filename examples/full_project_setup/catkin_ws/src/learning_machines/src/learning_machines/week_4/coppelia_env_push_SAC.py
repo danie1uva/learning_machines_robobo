@@ -88,6 +88,9 @@ class CoppeliaSimEnv(gym.Env):
         self.gathered_puck = 0
         self.puck_collected = False
         self.done = False
+        # Initialize the monotonic "best" distances:
+        self.best_dist_to_puck_so_far = self._distance_of_robot_to_puck()
+        self.best_dist_to_zone_so_far = self._distance_to_green_zone()
 
         # New metrics tracking
         self.collected_puck_step = None
@@ -116,7 +119,7 @@ class CoppeliaSimEnv(gym.Env):
         return self.state.astype(np.float32)
 
     def step(self, action):
-        reward = -0.025  # step penalty
+        reward = -0.01  # step penalty
         self.steps_in_episode += 1
         self.total_step_count += 1
 
@@ -178,22 +181,25 @@ class CoppeliaSimEnv(gym.Env):
         dist_puck = self._distance_of_robot_to_puck()
         dist_zone = self._distance_to_green_zone()
 
-        # If we had the puck but lost it
+        # 1) If we had the puck but lost it => penalty
         if self.puck_collected and not self._puck_contact(puck_box):
             self.puck_collected = False
             reward -= 10.0
 
-        # If not holding puck => reward progress in reducing dist_puck
+        # 2) If we do NOT have the puck => reward monotonic improvement in dist_puck
         if not self.puck_collected:
-            distance_diff = self.prev_dist_to_puck - dist_puck
-            reward += 5.0 * distance_diff
+            # Compare current dist_puck to the best (smallest) so far
+            if dist_puck < self.best_dist_to_puck_so_far:
+                improvement = self.best_dist_to_puck_so_far - dist_puck
+                # Scale the shaping; tweak factor (e.g. 5.0) as you see fit
+                reward += 5.0 * improvement
+                self.best_dist_to_puck_so_far = dist_puck  # Update best
 
-            # Check if we just collected the puck
+            # If we just collected the puck now
             if self._puck_contact(puck_box) and not self.puck_collected:
                 self.puck_collected = True
                 self.gathered_puck += 1
-                reward += 5.0
-                # Record the step at which we first collect
+                reward += 10.0
                 if self.collected_puck_step is None:
                     self.collected_puck_step = self.steps_in_episode
 
@@ -201,25 +207,22 @@ class CoppeliaSimEnv(gym.Env):
                 if self.gathered_puck > 3:
                     done = True
 
+        # 3) If we have the puck => reward monotonic improvement in dist_zone
         else:
-            # We have the puck => reward progress to zone
-            distance_diff = self.prev_dist_to_zone - dist_zone
-            reward += 10.0 * distance_diff
+            if dist_zone < self.best_dist_to_zone_so_far:
+                improvement = self.best_dist_to_zone_so_far - dist_zone
+                reward += 5.0 * improvement
+                self.best_dist_to_zone_so_far = dist_zone
 
-            # If we got the puck into the green zone => success
+            # Check if we got the puck into the green zone => success
             if self._puck_in_green_zone():
-                reward += 20.0
+                reward += 30.0
                 done = True
-                # Record steps at final goal
                 if self.final_goal_step is None:
                     self.final_goal_step = self.steps_in_episode
 
-        # Update trackers
-        self.prev_dist_to_puck = dist_puck
-        self.prev_dist_to_zone = dist_zone
-
-        reward = np.clip(reward, -5.0, 50.0)
         return reward, done
+
 
     # --------------------------
     # Helper Methods
@@ -230,7 +233,6 @@ class CoppeliaSimEnv(gym.Env):
         normalised_sensors = self._clamp_and_normalise(raw_state)
 
         frame = self.rob.read_image_front()
-        # Potentially rotate if needed
         frame = cv2.rotate(frame, cv2.ROTATE_180)
         
         puck_box = self._detect_red_areas(frame)
