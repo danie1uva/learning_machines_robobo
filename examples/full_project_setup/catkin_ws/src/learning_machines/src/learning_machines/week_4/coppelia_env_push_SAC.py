@@ -174,6 +174,7 @@ class CoppeliaSimEnv(gym.Env):
     # --------------------------
     # Reward Logic
     # --------------------------
+    
     def _calculate_reward_and_done(self, puck_box):
         reward = 0.0
         done = False
@@ -181,42 +182,42 @@ class CoppeliaSimEnv(gym.Env):
         dist_puck = self._distance_of_robot_to_puck()
         dist_zone = self._distance_to_green_zone()
 
-        # 1) If we had the puck but lost it => penalty
+        # If we had the puck but lost it => penalty
         if self.puck_collected and not self._puck_contact(puck_box):
             self.puck_collected = False
             reward -= 10.0
 
-        # 2) If we do NOT have the puck => reward monotonic improvement in dist_puck
+        # If not holding puck => monotonic improvement to the puck
         if not self.puck_collected:
-            # Compare current dist_puck to the best (smallest) so far
+            # Check if we set a new "best" distance to puck
             if dist_puck < self.best_dist_to_puck_so_far:
                 improvement = self.best_dist_to_puck_so_far - dist_puck
-                # Scale the shaping; tweak factor (e.g. 5.0) as you see fit
+                # Reward only positive improvement
                 reward += 5.0 * improvement
-                self.best_dist_to_puck_so_far = dist_puck  # Update best
+                self.best_dist_to_puck_so_far = dist_puck  # update best
 
             # If we just collected the puck now
             if self._puck_contact(puck_box) and not self.puck_collected:
                 self.puck_collected = True
                 self.gathered_puck += 1
-                reward += 10.0
+                reward += 5.0
                 if self.collected_puck_step is None:
                     self.collected_puck_step = self.steps_in_episode
 
-                # If collects multiple times => end early
                 if self.gathered_puck > 3:
                     done = True
 
-        # 3) If we have the puck => reward monotonic improvement in dist_zone
+        # If already have the puck => monotonic improvement to zone
         else:
+            # Reward only if we beat our best distance to zone
             if dist_zone < self.best_dist_to_zone_so_far:
                 improvement = self.best_dist_to_zone_so_far - dist_zone
                 reward += 5.0 * improvement
                 self.best_dist_to_zone_so_far = dist_zone
 
-            # Check if we got the puck into the green zone => success
+            # If delivered puck to zone => success
             if self._puck_in_green_zone():
-                reward += 30.0
+                reward += 50.0
                 done = True
                 if self.final_goal_step is None:
                     self.final_goal_step = self.steps_in_episode
