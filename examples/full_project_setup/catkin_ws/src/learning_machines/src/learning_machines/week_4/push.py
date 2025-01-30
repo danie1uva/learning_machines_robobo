@@ -64,7 +64,7 @@ class PushEnv(gym.Env):
         self.rob.stop_simulation()
         self.rob.play_simulation()
         time.sleep(0.5)
-        self.rob.set_phone_tilt_blocking(109, 109)
+        self.rob.set_phone_tilt_blocking(109, 100)
         self.episode_step = 0
         self.position_history.clear()
         self.kalman_filter = KalmanFilter()
@@ -81,10 +81,21 @@ class PushEnv(gym.Env):
 
         # Collision checks
         ir_raw = [x/1000 if x else 1.0 for x in self.rob.read_irs()]
-        if any(val > 0.15 for val in [ir_raw[6]]):  # Back collision
+
+        # --- 1) Back collision check on sensor 6 ---
+        if ir_raw[6] > 0.15:
+            # If something is close behind, stop episode
             return self._safe_compute_observation(), -0.0, True, {}
-        if any(val > 0.25 for val in [ir_raw[4], ir_raw[7], ir_raw[5]]) and not self._should_ignore_front_collision():
-            return self._safe_compute_observation(), -0.0, True, {}
+
+        # --- 2) Front/side collision logic depends on red puck visibility ---
+        if self._should_ignore_front_collision():
+            # Red puck in view -> check sensors 5 and 6 only
+            if any(val > 0.25 for val in [ir_raw[5], ir_raw[6]]):
+                return self._safe_compute_observation(), -0.0, True, {}
+        else:
+            # No red puck -> use front + side sensors 4, 5, and 7
+            if any(val > 0.25 for val in [ir_raw[4], ir_raw[5], ir_raw[7]]):
+                return self._safe_compute_observation(), -0.0, True, {}
 
         obs = self._safe_compute_observation()
         reward, done = self._compute_reward_and_done(obs)
@@ -203,7 +214,7 @@ class PushEnv(gym.Env):
         return math.hypot(robot_pos.x - food_pos.x, robot_pos.y - food_pos.y) + 1e-3
 
     def _should_ignore_front_collision(self):
-        return self._distance_robot_to_puck() < 0.3 or self._detect_red_areas(self.rob.read_image_front()) is not None
+        return self._detect_red_areas(self.rob.read_image_front()) is not None # or self._distance_robot_to_puck() < 0.3 
 
     def _compute_reward_and_done(self, obs):
         reward = 0
@@ -218,7 +229,7 @@ class PushEnv(gym.Env):
             # Distance reward
             dist_rp = self._distance_robot_to_puck()
             reward += 10.0 / (1.0 + dist_rp)
-            print("found the puck!")
+            # print("found the puck!")
             
             # Centering bonus
             puck_cx = (puck_box[0] + puck_box[2]/2) * self.camera_width
@@ -229,7 +240,7 @@ class PushEnv(gym.Env):
 
             if green_area > 100:
                 # Double reward when both visible
-                print("found the base!")
+                # print("found the base!")
                 reward *= 2
                 # Distance to base reward
                 dist_gt = self._distance_puck_to_base()
