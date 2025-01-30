@@ -85,17 +85,17 @@ class PushEnv(gym.Env):
         # --- 1) Back collision check on sensor 6 ---
         if ir_raw[6] > 0.15:
             # If something is close behind, stop episode
-            return self._safe_compute_observation(), -0.0, True, {}
+            return self._safe_compute_observation(), -5.0, True, {}
 
         # --- 2) Front/side collision logic depends on red puck visibility ---
         if self._should_ignore_front_collision():
             # Red puck in view -> check sensors 5 and 6 only
             if any(val > 0.25 for val in [ir_raw[5], ir_raw[6]]):
-                return self._safe_compute_observation(), -0.0, True, {}
+                return self._safe_compute_observation(), -5.0, True, {}
         else:
             # No red puck -> use front + side sensors 4, 5, and 7
             if any(val > 0.25 for val in [ir_raw[4], ir_raw[5], ir_raw[7]]):
-                return self._safe_compute_observation(), -0.0, True, {}
+                return self._safe_compute_observation(), -5.0, True, {}
 
         obs = self._safe_compute_observation()
         reward, done = self._compute_reward_and_done(obs)
@@ -247,7 +247,7 @@ class PushEnv(gym.Env):
                 reward += 15.0 / (1.0 + dist_gt)
 
         if self.rob.base_detects_food():
-            reward += 500.0
+            reward += 200.0
             done = True
 
         return reward, done
@@ -288,7 +288,7 @@ def train_push_agent():
         "MlpPolicy",
         env,
         verbose=1,
-        learning_rate=1e-4,
+        learning_rate=1e-3,
         gamma=0.99,
         gae_lambda=0.95,
         clip_range=0.2,
