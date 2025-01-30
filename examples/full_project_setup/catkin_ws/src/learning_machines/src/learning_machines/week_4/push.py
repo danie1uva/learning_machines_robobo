@@ -11,6 +11,12 @@ from stable_baselines3 import PPO
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.env_checker import check_env
+import torch
+
+print(torch.cuda.is_available())
+print(torch.cuda.device_count())
+print(torch.cuda.current_device())
+print(torch.cuda.get_device_name(0))
 
 # ----------------------------
 # KALMAN FILTER IMPLEMENTATION
@@ -228,7 +234,7 @@ class PushEnv(gym.Env):
         if puck_area > 100:
             # Distance reward
             dist_rp = self._distance_robot_to_puck()
-            reward += 10.0 / (1.0 + dist_rp)
+            reward += 20  * math.exp(-0.5*dist_rp)
             # print("found the puck!")
             
             # Centering bonus
@@ -288,14 +294,15 @@ def train_push_agent():
         "MlpPolicy",
         env,
         verbose=1,
-        learning_rate=1e-3,
+        device ="cuda",
+        learning_rate=3e-4,
         gamma=0.99,
         gae_lambda=0.95,
         clip_range=0.2,
         ent_coef=0.01,
         max_grad_norm=0.5,
         n_steps=2048,
-        batch_size=64,
+        batch_size=256,
         n_epochs=10,
         policy_kwargs={
             "net_arch": dict(pi=[256, 128], vf=[256, 128]),
@@ -305,7 +312,7 @@ def train_push_agent():
     
     try:
         model.learn(
-            total_timesteps=1_000_000,
+            total_timesteps=5_000_000,
             callback=WandbCallback(),
             reset_num_timesteps=True
         )
