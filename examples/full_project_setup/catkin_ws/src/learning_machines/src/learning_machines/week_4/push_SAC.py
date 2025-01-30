@@ -11,78 +11,111 @@ from collections import deque
 from .coppelia_env_push_SAC import CoppeliaSimEnv  # Ensure correct import path
 from robobo_interface import IRobobo, SimulationRobobo, HardwareRobobo
 
-import wandb
-from stable_baselines3.common.callbacks import BaseCallback
-from collections import deque
-
 class PerformanceBasedRandomizationCallback(BaseCallback):
     """
-    Callback to adjust the randomization frequency of the environment based on performance.
-    - Monitors the last 100 episodes.
-    - Adjusts randomization frequency as follows:
-        - No randomization until >=50 successes in last 100 episodes.
-        - Then, randomize every 5 episodes until >=70 successes.
-        - Then, randomize every 2 episodes until >=80 successes.
-        - Stop training once >=80 successes in the last 100 episodes.
-    - Logs episodic rewards and lengths to wandb.
+    Adjusts the randomization frequency based on performance,
+    and requires at least 100 episodes at each stage
+    before the next stage can unlock.
+
+    - Monitors the last 100 episodes' success flags.
+    - Stages:
+        0) No randomization => success_rate >= 50 => Stage 1
+        1) randomize_frequency=5 => success_rate >= 70 => Stage 2
+        2) randomize_frequency=2 => success_rate >= 80 => Stop training
+    - Each time a new stage is reached:
+        - success_history is reset
+        - episodes_since_stage_update is reset
+        - randomize_frequency is updated
+    - We only check for stage transitions if:
+        - success_rate >= required rate
+        - episodes_since_stage_update >= 100
     """
+
     def __init__(self, env, verbose=0):
         super().__init__(verbose=verbose)
         self.env = env
         self.success_history = deque(maxlen=100)
-        self.current_stage = 0  # 0: No randomization, 1: Every 5, 2: Every 2
+        self.episodes_since_stage_update = 0
+        self.current_stage = 0  # Index in self.stages
         self.stages = [
-            {'success_rate': 50, 'frequency': 5},
-            {'success_rate': 70, 'frequency': 2},
-            {'success_rate': 80, 'frequency': 2}  # Final stage to stop training
+            {'success_rate': 50, 'frequency': 2},  # after 50% success, randomize every 2 episodes
+            {'success_rate': 80, 'frequency': 1},  # after 80% success, randomize every episode
+            {'success_rate': 90, 'frequency': 1},  # after 90% success => final stage => training stops
         ]
 
+    def _init_callback(self) -> None:
+        # Called once when the training starts
+        self.episodes_since_stage_update = 0
+        self.current_stage = 0
+        self.success_history.clear()  # Start fresh
+
     def _on_step(self) -> bool:
-        # Check if an episode has finished
+        # The Monitor wrapper provides 'episode' data in infos when an episode ends
         infos = self.locals.get('infos', [])
         for info in infos:
-            # Monitor handles only one info per step in most cases
             if 'episode' in info:
                 episode_reward = info['episode']['r']
                 episode_length = info['episode']['l']
                 success = info.get('success', False)
 
-                # Append success to history
-                self.success_history.append(success)
+                # Additional metrics from environment info
+                puck_collected_in_episode = info.get('puck_collected_in_episode', False)
+                steps_to_puck_coll = info.get('steps_to_puck_collection', None)
+                steps_to_goal = info.get('steps_to_final_goal', None)
 
-                # Calculate current success rate
-                success_count = sum(self.success_history)
-                success_rate = (success_count / len(self.success_history)) * 100 if len(self.success_history) > 0 else 0
-
-                # Log episodic metrics to wandb
+                # Log the base episode metrics
                 wandb.log({
                     'episode_reward': episode_reward,
                     'episode_length': episode_length,
-                    'success': success,
-                    'success_rate': success_rate
+                    'success': success
                 })
 
-                # Determine the appropriate stage based on success rate
-                for idx, stage in enumerate(self.stages):
-                    if success_rate >= stage['success_rate']:
-                        if self.current_stage < idx + 1:
-                            self.current_stage = idx + 1
-                            new_frequency = stage['frequency']
-                            self.env.set_randomize_frequency(new_frequency)
-                            wandb.log({
-                                'randomize_frequency': new_frequency,
-                                'current_stage': self.current_stage,
-                                'success_rate': success_rate
-                            })
-                            print(f"Stage {self.current_stage} reached: success_rate={success_rate:.2f}%, "
-                                  f"randomize_frequency set to {new_frequency}")
+                # Log puck-collection metrics
+                wandb.log({
+                    'puck_collected_in_episode': puck_collected_in_episode
+                })
+                if steps_to_puck_coll is not None:
+                    wandb.log({'steps_to_puck_collection': steps_to_puck_coll})
+                if steps_to_goal is not None:
+                    wandb.log({'steps_to_final_goal': steps_to_goal})
 
-                # Check if final stage is achieved to stop training
-                if self.current_stage >= len(self.stages) and success_rate >= self.stages[-1]['success_rate']:
-                    print(f"Final stage achieved: success_rate={success_rate:.2f}%. Stopping training.")
-                    return False  # Returning False stops training
+                # Push success into rolling buffer
+                self.success_history.append(success)
 
-        return True  # Continue training
+                # Compute success rate
+                success_rate = (sum(self.success_history) / len(self.success_history)) * 100
+                wandb.log({'success_rate': success_rate})
+
+                # Another episode done in the current stage
+                self.episodes_since_stage_update += 1
+
+                # Check if we can move to next stage
+                if self.current_stage < len(self.stages):
+                    # Are we above threshold for the current stage?
+                    required_rate = self.stages[self.current_stage]['success_rate']
+                    if success_rate >= required_rate and self.episodes_since_stage_update >= 100:
+                        # Transition to the next stage
+                        new_frequency = self.stages[self.current_stage]['frequency']
+                        self.env.set_randomize_frequency(new_frequency)
+                        wandb.log({
+                            'randomize_frequency': new_frequency,
+                            'current_stage': self.current_stage + 1,
+                            'success_rate': success_rate
+                        })
+                        print(f"Stage {self.current_stage + 1} reached: "
+                              f"success_rate={success_rate:.2f}%, randomize_frequency={new_frequency}")
+
+                        # Move to next stage
+                        self.current_stage += 1
+                        self.episodes_since_stage_update = 0
+                        self.success_history.clear()  # reset rolling buffer
+                    # If that was the final stage, check if we should stop
+                    if self.current_stage >= len(self.stages):
+                        # We are beyond the last stage => training can stop
+                        print(f"Final stage: success_rate={success_rate:.2f}%. Stopping training.")
+                        return False  # stop training
+
+        return True  # Keep training
 
 def train_sac_dynamic_randomization(rob: IRobobo):
     """
