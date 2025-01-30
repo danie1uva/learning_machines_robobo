@@ -260,22 +260,37 @@ class WandbCallback(BaseCallback):
     def __init__(self, verbose=0):
         super().__init__(verbose)
         self.episode_rewards = []
+        self.best_mean_reward = -np.inf
 
     def _on_step(self) -> bool:
         for info in self.locals.get('infos', []):
             if 'episode' in info:
                 ep_reward = info['episode']['r']
                 self.episode_rewards.append(ep_reward)
+                current_episode = len(self.episode_rewards)
+                
+                # Logging
                 wandb.log({
                     "episode_reward": ep_reward,
-                    "total_steps": self.num_timesteps
+                    "total_steps": self.num_timesteps,
+                    "episode_count": current_episode
                 })
+
+                # Save best model (max single episode reward)
                 if ep_reward == max(self.episode_rewards):
                     self.model.save("/root/results/best_model_sb3")
+                    wandb.save("/root/results/best_model_sb3.zip")
+
+                # Save every 50 episodes
+                if current_episode % 50 == 0:
+                    model_path = f"/root/results/model_ep_{current_episode}"
+                    self.model.save(model_path)
+                    wandb.save(f"{model_path}.zip")
+                    
         return True
 
 # ----------------------------
-# MAIN TRAINING LOGIC
+# MAIN TRAINING LOGIC WITH IMPROVED SAVING
 # ----------------------------
 def train_push_agent():
     rob = SimulationRobobo()
@@ -289,7 +304,7 @@ def train_push_agent():
         "MlpPolicy",
         env,
         verbose=1,
-        device ="cuda",
+        device="cuda",
         learning_rate=3e-4,
         gamma=0.99,
         gae_lambda=0.95,
@@ -307,15 +322,21 @@ def train_push_agent():
     
     try:
         model.learn(
-            total_timesteps=5_000_000,
+            total_timesteps=1_000_000,
             callback=WandbCallback(),
             reset_num_timesteps=True
         )
-        model.save("/root/results/best_model_sb3")
+        # model.save("/root/results/best_model_sb3")
     except KeyboardInterrupt:
+        print("Training interrupted. Saving final model...")
         model.save("/root/results/interrupted_model_sb3")
+        wandb.save("/root/results/interrupted_model_sb3.zip")
     finally:
+        # Always save final model and clean up
+        model.save("/root/results/final_model_sb3")
+        wandb.save("/root/results/final_model_sb3.zip")
         env.close()
+        wandb.finish()
 
 def run_push_agent():
     rob = SimulationRobobo()
@@ -338,3 +359,4 @@ def run_push_agent():
 
 if __name__ == "__main__":
     train_push_agent()
+    #run_push_agent()
