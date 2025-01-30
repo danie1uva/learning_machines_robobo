@@ -155,6 +155,8 @@ class PPOAgent:
             if total_reward > best_reward:
                 best_reward = total_reward
                 torch.save(self.policy.state_dict(), "best_pusher.pth")
+                wandb.save("best_pusher.pth")
+
 
             print(f"[Episode {ep}] Total Reward: {total_reward:.2f} | Best: {best_reward:.2f}")
 # ----------------------------
@@ -216,18 +218,16 @@ class PushEnv(gym.Env):
         if any(val > 0.2 for val in back_irs):
             print(f"[COLLISION] Back sensor triggered: {back_irs}")
             obs = self._compute_observation()
-            return obs, -100.0, True, {}
+            return obs, -200.0, True, {}
 
         # Conditionally check front sensors
         if not self._should_ignore_front_collision():
             if any(val > 0.2 for val in front_irs):
                 print(f"[COLLISION] Front sensor triggered: {front_irs}")
                 obs = self._compute_observation()
-                return obs, -100.0, True, {}
+                return obs, -200.0, True, {}
         # else:
         #     print("[DEBUG] Ignoring front IR collisions due to puck proximity")
-
-
 
         # frame = self.rob.read_image_front()
         # if self._camera_collision_detected(frame):
@@ -267,7 +267,7 @@ class PushEnv(gym.Env):
         return puck_close or camera_detection
 
     def _compute_reward_and_done(self, obs):
-        reward = -0.2  # Step penalty remains
+        reward = -1  # Step penalty remains
         done = False
         reward_components = {}
 
@@ -283,18 +283,20 @@ class PushEnv(gym.Env):
         actual_h = puck_box[3] * self.camera_height
         puck_area = actual_w * actual_h
         
+        # Updated centering calculation
         if puck_area > 100:
-            # Reduced centering reward component
             puck_cx = (puck_box[0] + puck_box[2]/2) * self.camera_width
             puck_cy = (puck_box[1] + puck_box[3]/2) * self.camera_height
             img_center_x = self.camera_width/2
             img_center_y = self.camera_height/2
             
-            # Normalized centering component (0-1)
-            centering = 1.0 - (abs(puck_cx - img_center_x)/(self.camera_width/2))
+            # Use exponential centering reward
+            x_offset = abs(puck_cx - img_center_x)/(self.camera_width/2)
+            y_offset = abs(puck_cy - img_center_y)/(self.camera_height/2)
+            centering = 2.0 * (1.0 - math.sqrt(x_offset**2 + y_offset**2))
             
-            # Balance area vs centering (60/40 ratio)
-            area_shaping = (0.6 * min(puck_area/15000.0, 1.5)) + (0.4 * centering * 1.5)
+            # Increased area vs centering ratio (40/60)
+            area_shaping = (0.4 * min(puck_area/15000.0, 2.0)) + (0.6 * centering * 2.5)
             reward += area_shaping
             reward_components['area_shaping'] = area_shaping
         else:
@@ -347,7 +349,8 @@ class PushEnv(gym.Env):
                     reward += penalty
                     reward_components['circling_penalty'] = penalty
 
-        # print(f"[REWARD] Components: { {k: round(v, 2) for k, v in reward_components.items()} }")
+        print(f"[REWARD] Components: { {k: round(v, 2) for k, v in reward_components.items()} }")
+        print(f"total_reward: {reward:.2f}")
         return reward, done
 
     # ----------------------------
@@ -482,10 +485,11 @@ def train_push_agent():
     
     # Train with progress tracking
     try:
-        agent.train(env, episodes=2000)
+        agent.train(env, episodes=1999)
     except KeyboardInterrupt:
         print("Training interrupted - saving latest model")
         torch.save(agent.policy.state_dict(), "interrupted_pusher.pth")
+        wandb.save("interrupted_pusher.pth")
 
 def run_push_agent():
     rob = SimulationRobobo()
