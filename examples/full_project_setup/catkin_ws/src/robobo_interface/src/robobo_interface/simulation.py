@@ -495,17 +495,6 @@ class SimulationRobobo(IRobobo):
         """
         return self._base_food_distance() > 0
         
-    def set_food_position(self, position: Position) -> None:
-        """Set the position of the food in the simulation"""
-        if self._food is None:
-            raise AttributeError("Cannot find any food in the scene")
-        
-        self._sim.setObjectPosition(
-            self._food,
-            self._sim.handle_world,
-            [position.x, position.y, position.z]
-        )
-        
     def _base_food_distance(self) -> float:
         """Get the distance between the food and the base,
         0 if the food is too far away (which is to say, not on the plate)

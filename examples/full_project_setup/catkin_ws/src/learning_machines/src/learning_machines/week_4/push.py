@@ -61,7 +61,7 @@ class PPONetwork(nn.Module):
 class PPOAgent:
     def __init__(self, state_dim, action_dim):
         self.policy = PPONetwork(state_dim, action_dim)
-        self.optimizer = optim.Adam(self.policy.parameters(), lr=1e-4)
+        self.optimizer = optim.Adam(self.policy.parameters(), lr=0.01)
         self.gamma = 0.99
         self.epsilon = 0.2
         self.batch_size = 128
@@ -208,31 +208,26 @@ class PushEnv(gym.Env):
         # Collision checks
         ir_raw = self.rob.read_irs()
         ir_raw = [x/1000 if x is not None else 1.0 for x in ir_raw]
-        # print(f"[IR] Readings: {ir_raw}")
         
         # Split sensors into back and front groups
-        back_irs = [ir_raw[0], ir_raw[1], ir_raw[6]]  # BackL, BackR, BackC
-        front_irs = [ir_raw[2], ir_raw[3], ir_raw[4], ir_raw[5], ir_raw[7]]  # FrontL, FrontR, FrontC, FrontRR, FrontLL
-        
+        back_irs = [ir_raw[6]]  #BackC
+        front_irs = [ir_raw[4], ir_raw[7], ir_raw[5]]  #FrontC
+        print(f"front_irs: {front_irs}, back_irs: {back_irs}")
+
         # Always check back sensors first
-        if any(val > 0.2 for val in back_irs):
+        if any(val > 0.15 for val in back_irs):
             print(f"[COLLISION] Back sensor triggered: {back_irs}")
             obs = self._compute_observation()
-            return obs, -200.0, True, {}
+            return obs, -100.0, True, {}
 
         # Conditionally check front sensors
         if not self._should_ignore_front_collision():
-            if any(val > 0.2 for val in front_irs):
+            if any(val > 0.25 for val in front_irs):
                 print(f"[COLLISION] Front sensor triggered: {front_irs}")
                 obs = self._compute_observation()
-                return obs, -200.0, True, {}
+                return obs, -100.0, True, {}
         # else:
         #     print("[DEBUG] Ignoring front IR collisions due to puck proximity")
-
-        # frame = self.rob.read_image_front()
-        # if self._camera_collision_detected(frame):
-        #     obs = self._compute_observation()
-        #     return obs, -30.0, True, {}
 
         obs = self._compute_observation()
         reward, done = self._compute_reward_and_done(obs)
@@ -328,9 +323,9 @@ class PushEnv(gym.Env):
 
         # 5) Success Bonus (unchanged)
         if self.rob.base_detects_food():
-            reward += 500.0
+            reward += 1000.0
             done = True
-            reward_components['success'] = 500.0
+            reward_components['success'] = 1000.0
             print("[SUCCESS] Puck delivered to base!")
 
         # 6) Improved Circling Detection
@@ -420,23 +415,6 @@ class PushEnv(gym.Env):
             w/self.camera_width,
             h/self.camera_height
         ], dtype=np.float32)
-
-
-    # def _camera_collision_detected(self, frame):
-    #     hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-        
-    #     # Define white range in HSV (hue doesn't matter for white)
-    #     lower_white = np.array([0, 0, 200])
-    #     upper_white = np.array([255, 30, 255])
-        
-    #     mask = cv2.inRange(hsv, lower_white, upper_white)
-    #     white_ratio = np.mean(mask > 0)
-        
-    #     # Lower threshold for collision detection
-    #     if white_ratio > 0.95:
-    #         print(f"[COLLISION] White-out detected: {white_ratio*100:.1f}% white pixels")
-    #         return True
-    #     return False
 
     def _distance_puck_to_base(self):
         # Get precise positions using simulation API
