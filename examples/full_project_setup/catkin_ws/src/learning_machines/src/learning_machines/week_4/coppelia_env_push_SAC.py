@@ -5,8 +5,6 @@ import cv2
 import random
 import datetime
 
-from collections import deque
-
 from data_files import FIGURES_DIR
 from robobo_interface import IRobobo, HardwareRobobo, SimulationRobobo, Orientation, Position
 
@@ -22,15 +20,14 @@ class CoppeliaSimEnv(gym.Env):
         self.randomize_frequency = randomize_frequency
         self.puck_pos_range = puck_pos_range
 
-        # Continuous action space: [-1..1] mapped internally to [-25..100].
+        # Continuous action space: [-1..1], mapped to [-25..100]
         self.action_space = spaces.Box(
             low=np.array([-1.0, -1.0]),
             high=np.array([1.0, 1.0]),
             dtype=np.float32
         )
 
-        # Observations: 8 IR sensors + bounding box (4) for puck + bounding box (4) for green zone
-        # total = 16
+        # Observation: 8 IR sensors + bounding box for puck (4) + bounding box for green zone (4) => total=16
         self.observation_space = spaces.Box(
             low=0.0,
             high=1.0,
@@ -38,7 +35,7 @@ class CoppeliaSimEnv(gym.Env):
             dtype=np.float32
         )
 
-        # Initial positions
+        # Store initial robot positions for resetting
         self.init_pos = rob.get_position()
         self.init_ori = rob.get_orientation()
         self.puck_init_pos = rob.get_food_position()
@@ -47,28 +44,24 @@ class CoppeliaSimEnv(gym.Env):
         self.state = None
         self.done = False
         self.episode_count = 0
-        self.total_step_count = 0
         self.steps_in_episode = 0
-        self.gathered_puck = 0
 
-        # Tracking for difference-based distance rewards
-        self.prev_dist_to_puck = None
-        self.prev_dist_to_zone = None
+        # Tracking monotonic improvement
+        self.best_dist_to_puck_so_far = None
+        self.best_dist_to_zone_so_far = None
 
-        # Whether we currently hold the puck
+        # Whether we hold the puck
         self.puck_collected = False
 
-        # Episode can last up to 300 steps
+        # Episode limit
         self.max_steps = 300
 
-        # For randomization
+        # Randomization control
         self.randomize_counter = 0
 
-        # -------------------
-        # Additional tracking for new metrics
-        # -------------------
-        self.collected_puck_step = None       # Step at which the puck was first collected
-        self.final_goal_step = None           # Step at which the puck reached the green zone
+        # Additional metrics
+        self.collected_puck_step = None
+        self.final_goal_step = None
 
         frame = self.rob.read_image_front()
         self.camera_height, self.camera_width = frame.shape[:2]
@@ -79,25 +72,22 @@ class CoppeliaSimEnv(gym.Env):
         self.randomize_counter = 0
 
     def reset(self):
+        # Stop + start simulation
         self.rob.stop_simulation()
         self.rob.play_simulation()
         self.rob.set_phone_tilt_blocking(108, 100)
 
         self.episode_count += 1
         self.steps_in_episode = 0
-        self.gathered_puck = 0
-        self.puck_collected = False
         self.done = False
-        # Initialize the monotonic "best" distances:
-        self.best_dist_to_puck_so_far = self._distance_of_robot_to_puck()
-        self.best_dist_to_zone_so_far = self._distance_to_green_zone()
 
-        # New metrics tracking
+        # Clear puck state
+        self.puck_collected = False
         self.collected_puck_step = None
         self.final_goal_step = None
 
-        # Randomization logic
-        if self.randomize_frequency > 0 and self.randomize_counter >= self.randomize_frequency:
+        # Randomisation
+        if (self.randomize_frequency > 0) and (self.randomize_counter >= self.randomize_frequency):
             center_puck_location = Position(-3.3, 0.73, 0.01)
             px = center_puck_location.x + np.random.uniform(-self.puck_pos_range, self.puck_pos_range)
             py = center_puck_location.y + np.random.uniform(-self.puck_pos_range, self.puck_pos_range)
@@ -107,115 +97,111 @@ class CoppeliaSimEnv(gym.Env):
             )
             self.randomize_counter = 0
         else:
+            # Place robot at initial position, do not randomize
             self.rob.set_position(self.init_pos, self.init_ori)
             self.randomize_counter += 1
 
-        # Compute state
+        # Compute the initial observation
         self.state, _, _ = self._compute_state()
 
-        # Reset distance trackers
-        self.prev_dist_to_puck = self._distance_of_robot_to_puck()
-        self.prev_dist_to_zone = self._distance_to_green_zone()
+        # Monotonic trackers
+        self.best_dist_to_puck_so_far = self._distance_of_robot_to_puck()
+        self.best_dist_to_zone_so_far = self._distance_to_green_zone()
+
         return self.state.astype(np.float32)
 
     def step(self, action):
-        reward = -0.01  # step penalty
+        # Step penalty
+        reward = -0.02
         self.steps_in_episode += 1
-        self.total_step_count += 1
 
-        # Scale actions
+        # Scale action from [-1,1] to [-25,100]
         left_wheel = self._scale_action(action[0], -1.0, 1.0, -25, 100)
         right_wheel = self._scale_action(action[1], -1.0, 1.0, -25, 100)
         self.rob.move_blocking(left_wheel, right_wheel, 500)
 
+        # Compute next state
         next_state, puck_box, _ = self._compute_state()
-
+        done = False
         info = {}
 
-        # Check collisions
+        # If collision => big penalty and end
         if self._wall_collision(next_state):
             reward -= 1.0
-            self.done = True
+            done = True
             info["success"] = False
         else:
+            # Normal reward logic
             addl_reward, done_flag = self._calculate_reward_and_done(puck_box)
             reward += addl_reward
-            self.done = done_flag
+            done = done_flag
 
-            if self.done and self._puck_in_green_zone():
-                info["success"] = True
-            else:
-                info["success"] = False
+            # if done + in zone => success
+            info["success"] = (done and self._puck_in_green_zone())
 
-        # Max steps
+        # Check step limit
         if self.steps_in_episode >= self.max_steps:
-            self.done = True
-            if not self._puck_in_green_zone():
-                info["success"] = False
+            done = True
+            info["success"] = info.get("success", False)
 
         self.state = next_state
 
-        # -----------------
-        # Final step => populate custom metrics
-        # -----------------
-        if self.done:
-            # Was the puck collected at any point?
+        # If episode ended => fill final info metrics
+        if done:
+            # Did we collect the puck at all?
             puck_collected_in_episode = (self.collected_puck_step is not None)
             info["puck_collected_in_episode"] = puck_collected_in_episode
-            # If it was collected, how many steps did it take?
             if puck_collected_in_episode:
                 info["steps_to_puck_collection"] = self.collected_puck_step
-            # If final goal reached, how many steps total?
             if self.final_goal_step is not None:
                 info["steps_to_final_goal"] = self.final_goal_step
 
-        return self.state.astype(np.float32), float(reward), self.done, info
+        return self.state.astype(np.float32), float(reward), done, info
 
     # --------------------------
     # Reward Logic
     # --------------------------
-    
     def _calculate_reward_and_done(self, puck_box):
+        """
+        Simple monotonic shaping:
+        - If not collected => only reward if we set a new best distance to the puck.
+        - If collected => only reward if we set a new best distance to the zone.
+        - If we lose the puck => penalty.
+        - If we deliver the puck => big reward + done.
+        """
         reward = 0.0
         done = False
 
         dist_puck = self._distance_of_robot_to_puck()
         dist_zone = self._distance_to_green_zone()
 
-        # If we had the puck but lost it => penalty
+        # Lost puck?
         if self.puck_collected and not self._puck_contact(puck_box):
             self.puck_collected = False
             reward -= 10.0
 
-        # If not holding puck => monotonic improvement to the puck
+        # Not holding puck => approach puck monotonic
         if not self.puck_collected:
-            # Check if we set a new "best" distance to puck
             if dist_puck < self.best_dist_to_puck_so_far:
                 improvement = self.best_dist_to_puck_so_far - dist_puck
-                # Reward only positive improvement
                 reward += 5.0 * improvement
-                self.best_dist_to_puck_so_far = dist_puck  # update best
+                self.best_dist_to_puck_so_far = dist_puck
 
-            # If we just collected the puck now
+            # If contact, mark puck_collected
             if self._puck_contact(puck_box) and not self.puck_collected:
                 self.puck_collected = True
-                self.gathered_puck += 1
                 reward += 5.0
                 if self.collected_puck_step is None:
                     self.collected_puck_step = self.steps_in_episode
 
-                if self.gathered_puck > 3:
-                    done = True
-
-        # If already have the puck => monotonic improvement to zone
+        # If we hold the puck => approach zone monotonic
         else:
-            # Reward only if we beat our best distance to zone
             if dist_zone < self.best_dist_to_zone_so_far:
                 improvement = self.best_dist_to_zone_so_far - dist_zone
                 reward += 5.0 * improvement
                 self.best_dist_to_zone_so_far = dist_zone
 
-            # If delivered puck to zone => success
+            # If we got the puck in zone => success
             if self._puck_in_green_zone():
                 reward += 50.0
                 done = True
@@ -224,23 +210,25 @@ class CoppeliaSimEnv(gym.Env):
 
         return reward, done
 
-
     # --------------------------
     # Helper Methods
     # --------------------------
     def _compute_state(self):
+        # IR sensors
         irs = self.rob.read_irs()
         raw_state = self._process_irs(irs)
         normalised_sensors = self._clamp_and_normalise(raw_state)
 
+        # Camera read + bounding boxes
         frame = self.rob.read_image_front()
         frame = cv2.rotate(frame, cv2.ROTATE_180)
-        
+
         puck_box = self._detect_red_areas(frame)
         green_zone_box = self._detect_green_areas(frame)
 
         puck_state = self._normalise_box(puck_box)
         green_zone_state = self._normalise_box(green_zone_box)
+
         obs = np.concatenate((normalised_sensors, puck_state, green_zone_state))
         return obs, puck_box, green_zone_box
 
@@ -254,6 +242,7 @@ class CoppeliaSimEnv(gym.Env):
         return np.max(side_sensors) > 0.2 or np.max(back_sensors) > 0.4
 
     def _process_irs(self, sensor_vals):
+        # Indexing depends on your IR arrangement
         return [
             sensor_vals[7],
             sensor_vals[2],
@@ -269,7 +258,7 @@ class CoppeliaSimEnv(gym.Env):
         if puck_box is None:
             return False
         dist = self._distance_of_robot_to_puck()
-        center_of_puck = puck_box[0] + puck_box[2] / 2
+        center_of_puck = puck_box[0] + puck_box[2]/2
         is_centered = (center_of_puck > 2*self.camera_width/5) and \
                       (center_of_puck < 3*self.camera_width/5)
         return is_centered and dist < 0.2
@@ -286,11 +275,6 @@ class CoppeliaSimEnv(gym.Env):
 
     def _puck_in_green_zone(self):
         return self.rob.base_detects_food()
-
-    def _distance_reward(self, dist, alpha=3.0, min_dist=0.1):
-        if dist <= min_dist:
-            return 1.0
-        return float(np.exp(-alpha * (dist - min_dist)))
 
     def _clamp_and_normalise(self, vals):
         clamped = np.clip(vals, 0.0, self.MAX_SENSOR_VAL)
@@ -349,7 +333,6 @@ class CoppeliaSimEnv(gym.Env):
         for contour in red_contours:
             x, y, w, h = cv2.boundingRect(contour)
             cv2.rectangle(frame_copy, (x, y), (x+w, y+h), (0, 0, 255), 2)
-
         for contour in green_contours:
             x, y, w, h = cv2.boundingRect(contour)
             cv2.rectangle(frame_copy, (x, y), (x+w, y+h), (0, 255, 0), 2)

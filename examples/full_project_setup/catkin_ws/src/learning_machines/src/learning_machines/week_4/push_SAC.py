@@ -38,9 +38,9 @@ class PerformanceBasedRandomizationCallback(BaseCallback):
         self.episodes_since_stage_update = 0
         self.current_stage = 0  # Index in self.stages
         self.stages = [
-            {'success_rate': 50, 'frequency': 1},  # after 50% success, randomize every 2 episodes
-            {'success_rate': 80, 'frequency': 0},  # after 80% success, randomize every episode
-            {'success_rate': 90, 'frequency': 0},  # after 90% success => final stage => training stops
+            {'success_rate': 50, 'frequency': 2},  # after 50% success, randomize every 2 episodes
+            {'success_rate': 80, 'frequency': 1},  # after 80% success, randomize every episode
+            {'success_rate': 90, 'frequency': 1},  # after 90% success => final stage => training stops
         ]
 
     def _init_callback(self) -> None:
