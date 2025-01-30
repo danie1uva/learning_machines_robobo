@@ -13,11 +13,6 @@ from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.env_checker import check_env
 import torch
 
-print(torch.cuda.is_available())
-print(torch.cuda.device_count())
-print(torch.cuda.current_device())
-print(torch.cuda.get_device_name(0))
-
 # ----------------------------
 # KALMAN FILTER IMPLEMENTATION
 # ----------------------------
@@ -89,9 +84,9 @@ class PushEnv(gym.Env):
         ir_raw = [x/1000 if x else 1.0 for x in self.rob.read_irs()]
 
         # --- 1) Back collision check on sensor 6 ---
-        if ir_raw[6] > 0.15:
-            # If something is close behind, stop episode
-            return self._safe_compute_observation(), -5.0, True, {}
+        # if ir_raw[6] > 0.15:
+        #     # If something is close behind, stop episode
+        #     return self._safe_compute_observation(), -5.0, True, {}
 
         # --- 2) Front/side collision logic depends on red puck visibility ---
         if self._should_ignore_front_collision():
