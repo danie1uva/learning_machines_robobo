@@ -48,7 +48,11 @@ class PPONetwork(nn.Module):
 
     def forward(self, x):
         shared_out = self.shared(x)
-        return self.actor(shared_out), self.critic(shared_out)
+        actor_out = self.actor(shared_out)
+        mean, log_std = actor_out.chunk(2, dim=-1)
+        mean = torch.sigmoid(mean)  # Squash mean to [0,1]
+        log_std = torch.clamp(log_std, min=-20, max=2)
+        return torch.cat([mean, log_std], dim=-1), self.critic(shared_out)
 
 
 # ----------------------------
@@ -74,6 +78,7 @@ class PPOAgent:
         std = log_std.exp()
         dist = Normal(mean, std)
         action = dist.sample()
+        action = torch.clamp(action, 0.0, 1.0)  # Force [0,1] range
         log_prob = dist.log_prob(action).sum(-1)
         return action.numpy()[0], log_prob.numpy(), value.numpy()[0]
 
@@ -184,6 +189,8 @@ class PushEnv(gym.Env):
         return self._compute_observation()
 
     def step(self, action):
+        action = np.clip(action, 0.0, 1.0)
+        self.last_action = action
         self.episode_step += 1
         self.last_robot_pos = self.rob.get_position()
         self.last_robot_ori = self.rob.get_orientation()
@@ -199,32 +206,33 @@ class PushEnv(gym.Env):
         # Collision checks
         ir_raw = self.rob.read_irs()
         ir_raw = [x/1000 if x is not None else 1.0 for x in ir_raw]
+        # print(f"[IR] Readings: {ir_raw}")
         
         # Split sensors into back and front groups
         back_irs = [ir_raw[0], ir_raw[1], ir_raw[6]]  # BackL, BackR, BackC
         front_irs = [ir_raw[2], ir_raw[3], ir_raw[4], ir_raw[5], ir_raw[7]]  # FrontL, FrontR, FrontC, FrontRR, FrontLL
         
         # Always check back sensors first
-        if any(val > 0.50 for val in back_irs):
+        if any(val > 0.2 for val in back_irs):
             print(f"[COLLISION] Back sensor triggered: {back_irs}")
             obs = self._compute_observation()
-            return obs, -300.0, True, {}
+            return obs, -100.0, True, {}
 
         # Conditionally check front sensors
         if not self._should_ignore_front_collision():
-            if any(val > 0.50 for val in front_irs):
+            if any(val > 0.2 for val in front_irs):
                 print(f"[COLLISION] Front sensor triggered: {front_irs}")
                 obs = self._compute_observation()
                 return obs, -100.0, True, {}
-        else:
-            print("[DEBUG] Ignoring front IR collisions due to puck proximity")
+        # else:
+        #     print("[DEBUG] Ignoring front IR collisions due to puck proximity")
 
 
 
-        frame = self.rob.read_image_front()
-        if self._camera_collision_detected(frame):
-            obs = self._compute_observation()
-            return obs, -30.0, True, {}
+        # frame = self.rob.read_image_front()
+        # if self._camera_collision_detected(frame):
+        #     obs = self._compute_observation()
+        #     return obs, -30.0, True, {}
 
         obs = self._compute_observation()
         reward, done = self._compute_reward_and_done(obs)
@@ -251,108 +259,103 @@ class PushEnv(gym.Env):
         puck_close = self._distance_robot_to_puck() < 0.3
         camera_detection = self._detect_red_areas(self.rob.read_image_front()) is not None
         
-        if puck_close:
-            print("[DEBUG] Close to puck - ignoring front IR collisions")
-        if camera_detection:
-            print("[DEBUG] Puck detected in camera - ignoring front IR collisions")
+        # if puck_close:
+        #     print("[DEBUG] Close to puck - ignoring front IR collisions")
+        # if camera_detection:
+        #     print("[DEBUG] Puck detected in camera - ignoring front IR collisions")
             
         return puck_close or camera_detection
 
     def _compute_reward_and_done(self, obs):
-        reward = -0.2  # Increased step penalty
+        reward = -0.2  # Step penalty remains
         done = False
         reward_components = {}
 
-        # 1) Robot->Puck Proximity
+        # 1) Robot->Puck Proximity (MAIN PRIORITY)
         dist_rp = self._distance_robot_to_puck()
-        if dist_rp < 0.5:
-            rp_shaping = 12.0 / (1.0 + dist_rp)  # Higher reward when close
-        else:
-            rp_shaping = 8.0 / (1.0 + dist_rp)
+        rp_shaping = 10.0 / (1.0 + dist_rp)  # Increased base reward
         reward += rp_shaping
         reward_components['rp_shaping'] = rp_shaping
 
-        # 2) Camera Red Box Presence and Centering
+        # 2) Camera Red Box Presence (secondary)
         puck_box = obs[5:9]
-        actual_x = puck_box[0] * self.camera_width
-        actual_y = puck_box[1] * self.camera_height
         actual_w = puck_box[2] * self.camera_width
         actual_h = puck_box[3] * self.camera_height
         puck_area = actual_w * actual_h
         
         if puck_area > 100:
-            area_reward = min(puck_area / 15000.0, 3.0)
-            puck_cx = actual_x + actual_w / 2
-            puck_cy = actual_y + actual_h / 2
-            img_center_x = self.camera_width / 2
-            img_center_y = self.camera_height / 2
-            centering_dist = math.sqrt((puck_cx - img_center_x)**2 + (puck_cy - img_center_y)**2)
-            max_dist = math.sqrt((self.camera_width)**2 + (self.camera_height)**2)
-            centering_reward = 2.0 * (1.0 - (centering_dist / max_dist))
-            area_shaping = area_reward + centering_reward
+            # Reduced centering reward component
+            puck_cx = (puck_box[0] + puck_box[2]/2) * self.camera_width
+            puck_cy = (puck_box[1] + puck_box[3]/2) * self.camera_height
+            img_center_x = self.camera_width/2
+            img_center_y = self.camera_height/2
+            
+            # Normalized centering component (0-1)
+            centering = 1.0 - (abs(puck_cx - img_center_x)/(self.camera_width/2))
+            
+            # Balance area vs centering (60/40 ratio)
+            area_shaping = (0.6 * min(puck_area/15000.0, 1.5)) + (0.4 * centering * 1.5)
             reward += area_shaping
             reward_components['area_shaping'] = area_shaping
         else:
-            area_shaping = -0.5  # Penalty for no detection
-            reward += area_shaping
-            reward_components['area_shaping'] = area_shaping
+            reward -= 0.5
+            reward_components['area_penalty'] = -0.5
 
-        # 3) Camera Alignment
-        green_box = obs[9:13]
-        if puck_box[2] > 0 and green_box[2] > 0:
-            puck_cx = puck_box[0] + puck_box[2]/2
-            puck_cy = puck_box[1] + puck_box[3]/2
-            green_cx = green_box[0] + green_box[2]/2
-            green_cy = green_box[1] + green_box[3]/2
-            dist_cam = math.sqrt((puck_cx - green_cx)**2 + (puck_cy - green_cy)**2)
-            camera_shaping = max(0, 2.0 - dist_cam) * 2.0  # Increased reward
-            reward += camera_shaping
-            reward_components['camera_shaping'] = camera_shaping
+        # 3) Forward Motion Incentive (NEW)
+        # Get wheel speeds from last action
+        left_speed = self.last_action[0] if hasattr(self, 'last_action') else 0
+        right_speed = self.last_action[1] if hasattr(self, 'last_action') else 0
+        speed_similarity = 1.0 - abs(left_speed - right_speed)
+        forward_bonus = speed_similarity * 0.5  # Max 1.2 per step
+        reward += forward_bonus
+        reward_components['forward_bonus'] = forward_bonus
 
-        # 4) Puck->Base Proximity
+        # 4) Puck->Base Proximity 
         dist_gt = self._distance_puck_to_base()
-        if dist_rp < 0.5:
-            gt_shaping = 12.0 / (1.0 + dist_gt)  # Higher reward when close to puck
-        else:
-            gt_shaping = 8.0 / (1.0 + dist_gt)
+        gt_shaping = 10.0 / (1.0 + dist_gt)  # Increased from 10.0
+        # Additional bonus for moving puck closer
+        if hasattr(self, 'last_puck_distance'):
+            distance_delta = self.last_puck_distance - dist_gt
+            movement_bonus = 2.0 * distance_delta  # Scale delta for meaningful reward
+            reward += movement_bonus
+            reward_components['puck_movement'] = movement_bonus
+        self.last_puck_distance = dist_gt  # Store for next calculation
+        
         reward += gt_shaping
         reward_components['gt_shaping'] = gt_shaping
 
-        # 5) Success Bonus
+        # 5) Success Bonus (unchanged)
         if self.rob.base_detects_food():
-            reward += 500.0  # Increased success bonus
+            reward += 500.0
             done = True
             reward_components['success'] = 500.0
+            print("[SUCCESS] Puck delivered to base!")
 
-        # 6) Circling Penalty
-        if len(self.position_history) >= 8:
+        # 6) Improved Circling Detection
+        if len(self.position_history) >= 5:  # Shorter window
             positions = np.array(self.position_history)
+            displacements = np.linalg.norm(positions[:-1] - positions[1:], axis=1)
+            total_distance = np.sum(displacements)
             
-            # Calculate net displacement
-            start_pos = positions[0]
-            end_pos = positions[-1]
-            displacement = np.linalg.norm(end_pos - start_pos)
-            
-            # Calculate total distance traveled
-            distances = np.linalg.norm(positions[1:] - positions[:-1], axis=1)
-            total_distance = np.sum(distances)
-            
-            # Circling ratio: displacement / total_distance
-            if total_distance > 0.5:  # Only check if meaningful movement
-                circling_ratio = displacement / total_distance
-                if circling_ratio < 0.1:  # More sensitive threshold
-                    circling_penalty = -200.0 * (1 - circling_ratio)  # Increased penalty
-                    reward += circling_penalty
-                    reward_components['circling_penalty'] = circling_penalty
+            if total_distance > 0.5:
+                net_displacement = np.linalg.norm(positions[-1] - positions[0])
+                circling_ratio = net_displacement / total_distance
+                
+                # Progressive penalty based on circling severity
+                if circling_ratio < 0.3:
+                    penalty = -3.0 * (1.0 - (circling_ratio/0.3))
+                    reward += penalty
+                    reward_components['circling_penalty'] = penalty
 
-        print(f"[REWARD] Components: { {k: round(v, 2) for k, v in reward_components.items()} }")
+        # print(f"[REWARD] Components: { {k: round(v, 2) for k, v in reward_components.items()} }")
         return reward, done
 
     # ----------------------------
     # HELPER METHODS
     # ----------------------------
     def _compute_observation(self):
-        ir_raw = [x/1000 if x is not None else 1.0 for x in self.rob.read_irs()]
+        ir_raw = self.rob.read_irs()
+        ir_raw = [x if x is not None else 1.0 for x in self.rob.read_irs()]
         chosen_irs = [ir_raw[7], ir_raw[2], ir_raw[4], ir_raw[3], ir_raw[5]]
         
         frame = self.rob.read_image_front()
@@ -402,7 +405,7 @@ class PushEnv(gym.Env):
             c = max(contours, key=cv2.contourArea)
             # Change from minAreaRect to boundingRect
             x, y, w, h = cv2.boundingRect(c)
-            print(f"[DEBUG] Green platform detected: {w}x{h} area at ({x},{y})")
+            # print(f"[DEBUG] Green platform detected: {w}x{h} area at ({x},{y})")
             return (x, y, w, h)
         return None
 
@@ -416,22 +419,21 @@ class PushEnv(gym.Env):
         ], dtype=np.float32)
 
 
-    def _camera_collision_detected(self, frame):
-        # More sensitive white detection with adjusted thresholds
-        hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+    # def _camera_collision_detected(self, frame):
+    #     hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
         
-        # Define white range in HSV (hue doesn't matter for white)
-        lower_white = np.array([0, 0, 200])
-        upper_white = np.array([255, 30, 255])
+    #     # Define white range in HSV (hue doesn't matter for white)
+    #     lower_white = np.array([0, 0, 200])
+    #     upper_white = np.array([255, 30, 255])
         
-        mask = cv2.inRange(hsv, lower_white, upper_white)
-        white_ratio = np.mean(mask > 0)
+    #     mask = cv2.inRange(hsv, lower_white, upper_white)
+    #     white_ratio = np.mean(mask > 0)
         
-        # Lower threshold for collision detection
-        if white_ratio > 0.95:
-            print(f"[COLLISION] White-out detected: {white_ratio*100:.1f}% white pixels")
-            return True
-        return False
+    #     # Lower threshold for collision detection
+    #     if white_ratio > 0.95:
+    #         print(f"[COLLISION] White-out detected: {white_ratio*100:.1f}% white pixels")
+    #         return True
+    #     return False
 
     def _distance_puck_to_base(self):
         # Get precise positions using simulation API
@@ -443,7 +445,7 @@ class PushEnv(gym.Env):
             (food_pos.x - base_pos.x)**2 +
             (food_pos.y - base_pos.y)**2
         )
-        print(f"[DISTANCE] Puck to base: {distance:.2f}m")
+        # print(f"[DISTANCE] Puck to base: {distance:.2f}m (Δ: {distance - self.last_puck_distance if hasattr(self, 'last_puck_distance') else 0:.2f})")
         return distance
 
     def _distance_robot_to_puck(self):
