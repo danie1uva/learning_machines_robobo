@@ -383,7 +383,7 @@ class HardwareInferenceEnv(gym.Env):
         """
         # Possibly do any hardware-specific re-initialisation or calibration
         
-        self.rob.set_phone_tilt_blocking(108, 100)
+        self.rob.set_phone_tilt_blocking(109, 100)
         self.rob.set_phone_pan_blocking(122, 100)
 
         # Return first obs
@@ -406,6 +406,7 @@ class HardwareInferenceEnv(gym.Env):
         # Execute movement
         # e.g. 500ms drive
         self.rob.move_blocking(left_wheel, right_wheel, 700)
+        self._check_what_camera_sees()
 
         # Compute new state
         obs, puck_box, green_zone_box = self._compute_state()
@@ -430,7 +431,7 @@ class HardwareInferenceEnv(gym.Env):
         # Image reading, detect boxes
         frame = self.rob.read_image_front()
         # If camera is reversed physically, rotate if needed
-        frame = cv2.rotate(frame, cv2.ROTATE_180)
+        # frame = cv2.rotate(frame, cv2.ROTATE_180)
 
         puck_box = self._detect_red_areas(frame)
         green_box = self._detect_green_areas(frame)
@@ -510,7 +511,7 @@ class HardwareInferenceEnv(gym.Env):
         In hardware, might save an image for logging or debugging.
         """
         frame = self.rob.read_image_front()
-        frame = cv2.rotate(frame, cv2.ROTATE_180)
+        # frame = cv2.rotate(frame, cv2.ROTATE_180)
         hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
 
         lower_red = np.array([0, 50, 50])

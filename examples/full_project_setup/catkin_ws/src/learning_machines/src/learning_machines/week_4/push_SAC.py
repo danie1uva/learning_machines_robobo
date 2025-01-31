@@ -5,6 +5,7 @@ from stable_baselines3 import SAC
 from stable_baselines3.sac.policies import MlpPolicy
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.callbacks import BaseCallback
+import torch
 
 from collections import deque
 
@@ -186,15 +187,42 @@ def run_sac_evaluation_hardware(rob: IRobobo, model_path: str):
     :param model_path: Path to the saved SAC model.
     """
 
-    env = CoppeliaSimEnv(
-        rob=rob,
-        randomize_frequency=5,  # Example frequency; adjust as needed
-        puck_pos_range=0.4
+    wandb.init(
+    project="coppelia_sac_dynamic_randomization_eval",
+    config={
+        "algo": "SAC-DynamicRandomization",
+        "learning_rate": 3e-4,
+        "buffer_size": 50000,
+        "batch_size": 256,
+        "gamma": 0.99,
+        "tau": 0.005,
+        "ent_coef": "auto",
+        "max_grad_norm": 0.5,
+        "total_timesteps": 300000,  # Initial total timesteps; may stop earlier based on performance
+        "run_date": datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    },
+    name=f"sac_eval_run_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}")
+
+    env = HardwareInferenceEnv(
+        rob=rob
     )
     env = Monitor(env)
 
+    # Initialize SAC model
+    model = SAC(
+        policy=MlpPolicy,
+        env=env,
+        learning_rate=wandb.config.learning_rate,
+        buffer_size=wandb.config.buffer_size,
+        batch_size=wandb.config.batch_size,
+        gamma=wandb.config.gamma,
+        tau=wandb.config.tau,
+        ent_coef=wandb.config.ent_coef,
+        verbose=1
+    )
+
     # Load the trained SAC model
-    model = SAC.load(model_path, env=env)
+    model.policy.load_state_dict(torch.load(model_path, map_location=torch.device("cpu")))
 
     obs = env.reset()
     done = False
@@ -215,6 +243,18 @@ def run_sac_evaluation_sim(rob: IRobobo, model_path: str):
     """
     wandb.init(
         project="coppelia_sac_dynamic_randomization_eval",
+        config={
+            "algo": "SAC-DynamicRandomization",
+            "learning_rate": 3e-4,
+            "buffer_size": 50000,
+            "batch_size": 256,
+            "gamma": 0.99,
+            "tau": 0.005,
+            "ent_coef": "auto",
+            "max_grad_norm": 0.5,
+            "total_timesteps": 300000,  # Initial total timesteps; may stop earlier based on performance
+            "run_date": datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        },
         name=f"sac_eval_run_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
     )
 
@@ -227,11 +267,24 @@ def run_sac_evaluation_sim(rob: IRobobo, model_path: str):
         randomize_frequency=5,  # Example frequency; adjust as needed
         puck_pos_range=0 # No randomization during evaluation
     )
-    
+
     env = Monitor(env)
 
+    # Initialize SAC model
+    model = SAC(
+        policy=MlpPolicy,
+        env=env,
+        learning_rate=wandb.config.learning_rate,
+        buffer_size=wandb.config.buffer_size,
+        batch_size=wandb.config.batch_size,
+        gamma=wandb.config.gamma,
+        tau=wandb.config.tau,
+        ent_coef=wandb.config.ent_coef,
+        verbose=1
+    )
+
     # Load the trained SAC model
-    model = SAC.load(model_path, env=env)
+    model.policy.load_state_dict(torch.load(model_path, map_location=torch.device("cpu")))
 
     obs = env.reset()
     done = False
