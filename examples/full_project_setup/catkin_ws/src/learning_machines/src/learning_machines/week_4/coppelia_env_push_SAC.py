@@ -400,8 +400,8 @@ class HardwareInferenceEnv(gym.Env):
         4) Return (observation, reward=0, done=False, info={})
         """
         # Scale actions e.g. [-1,1] -> [-25,100]
-        left_wheel = self._scale_action(action[0], -1.0, 1.0, -25, 100)
-        right_wheel = self._scale_action(action[1], -1.0, 1.0, -25, 100)
+        left_wheel = int(self._scale_action(action[0], -1.0, 1.0, -25, 100))
+        right_wheel = int(self._scale_action(action[1], -1.0, 1.0, -25, 100))
 
         # Execute movement
         # e.g. 500ms drive
@@ -431,7 +431,7 @@ class HardwareInferenceEnv(gym.Env):
         # Image reading, detect boxes
         frame = self.rob.read_image_front()
         # If camera is reversed physically, rotate if needed
-        # frame = cv2.rotate(frame, cv2.ROTATE_180)
+        frame = cv2.rotate(frame, cv2.ROTATE_180)
 
         puck_box = self._detect_red_areas(frame)
         green_box = self._detect_green_areas(frame)
@@ -484,6 +484,7 @@ class HardwareInferenceEnv(gym.Env):
         ], dtype=np.float32)
 
     def _detect_red_areas(self, frame):
+        camera_shift = 75
         hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
         lower_red = np.array([0, 50, 50])
         upper_red = np.array([10, 255, 255])
@@ -491,7 +492,9 @@ class HardwareInferenceEnv(gym.Env):
         contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         if contours:
             largest = max(contours, key=cv2.contourArea)
-            return cv2.boundingRect(largest)
+            x, y, w, h = cv2.boundingRect(largest)
+            if w*h > 250:
+                return x+camera_shift, y, w, h
         return None
 
     def _detect_green_areas(self, frame):
@@ -500,9 +503,11 @@ class HardwareInferenceEnv(gym.Env):
         upper_green = np.array([80, 255, 255])
         mask = cv2.inRange(hsv, lower_green, upper_green)
         contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        
         if contours:
             largest = max(contours, key=cv2.contourArea)
             return cv2.boundingRect(largest)
+        
         return None
 
     def _check_what_camera_sees(self):
@@ -510,8 +515,9 @@ class HardwareInferenceEnv(gym.Env):
         (Optional) Quick debugging method to see or record frames.
         In hardware, might save an image for logging or debugging.
         """
+        camera_shift = 75
         frame = self.rob.read_image_front()
-        # frame = cv2.rotate(frame, cv2.ROTATE_180)
+        frame = cv2.rotate(frame, cv2.ROTATE_180)
         hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
 
         lower_red = np.array([0, 50, 50])
@@ -526,12 +532,15 @@ class HardwareInferenceEnv(gym.Env):
         green_contours, _ = cv2.findContours(green_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
         frame_copy = frame.copy()
-        for contour in red_contours:
-            x, y, w, h = cv2.boundingRect(contour)
+        if red_contours:
+            largest = max(red_contours, key=cv2.contourArea)
+            x, y, w, h = cv2.boundingRect(largest) 
+            x = x + camera_shift
             cv2.rectangle(frame_copy, (x, y), (x+w, y+h), (0, 0, 255), 2)
-        for contour in green_contours:
-            x, y, w, h = cv2.boundingRect(contour)
-            cv2.rectangle(frame_copy, (x, y), (x + w, y + h), (0, 255, 0), 2)
+        if green_contours:
+            largest = max(green_contours, key=cv2.contourArea)
+            x, y, w, h = cv2.boundingRect(largest) 
+            cv2.rectangle(frame_copy, (x, y), (x+w, y+h), (0, 255, 0), 2)
 
         current_time = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S_%f")
         cv2.imwrite(str(FIGURES_DIR / f"hardware_snapshot_{current_time}.png"), frame_copy)
