@@ -227,32 +227,35 @@ class PushEnv(gym.Env):
         green_area = (green_box[2] * self.camera_width) * (green_box[3] * self.camera_height)
 
         if puck_area > 100:
-            # Distance reward
-            dist_rp = self._distance_robot_to_puck()
-            reward += 20  * math.exp(-0.5*dist_rp)
-            # print("found the puck!")
-            
-            # Centering bonus
-            puck_cx = (puck_box[0] + puck_box[2]/2) * self.camera_width
-            puck_cy = (puck_box[1] + puck_box[3]/2) * self.camera_height
-            x_offset = abs(puck_cx - self.camera_width/2)/(self.camera_width/2)
-            y_offset = abs(puck_cy - self.camera_height/2)/(self.camera_height/2)
-            reward += 2.5 * (1.0 - math.hypot(x_offset, y_offset))
+            # If red puck is very large but green not visible, skip rewards
+            if (puck_area > 20000) and (green_area <= 100):
+                pass  # No rewards in this case
+            else:
+                # Distance reward for robot to puck
+                dist_rp = self._distance_robot_to_puck()
+                reward += 2 * math.exp(-0.5 * dist_rp)
+                
+                # Centering bonus for puck in camera view
+                puck_cx = (puck_box[0] + puck_box[2]/2) * self.camera_width
+                puck_cy = (puck_box[1] + puck_box[3]/2) * self.camera_height
+                x_offset = abs(puck_cx - self.camera_width/2) / (self.camera_width/2)
+                y_offset = abs(puck_cy - self.camera_height/2) / (self.camera_height/2)
+                reward += 2.5 * (1.0 - math.hypot(x_offset, y_offset))
 
-            if green_area > 100:
-                # Double reward when both visible
-                # print("found the base!")
-                reward *= 2
-                # Distance to base reward
+                # Distance-based reward from puck to base
                 dist_gt = self._distance_puck_to_base()
-                reward += 15.0 / (1.0 + dist_gt)
+                reward += 10.0 / (1.0 + dist_gt)
 
+                # Double reward if green base is visible
+                if green_area > 100:
+                    reward *= 2
+
+        # Check if puck is successfully delivered to base
         if self.rob.base_detects_food():
             reward += 200.0
             done = True
 
         return reward, done
-
 # ----------------------------
 # WANDB CALLBACK
 # ----------------------------
