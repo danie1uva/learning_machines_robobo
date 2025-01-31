@@ -12,6 +12,7 @@ from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.env_checker import check_env
 import torch
+from robobo_interface import SimulationRobobo, HardwareRobobo, IRobobo
 
 # ----------------------------
 # KALMAN FILTER IMPLEMENTATION
@@ -342,11 +343,11 @@ def train_push_agent():
         wandb.finish()
 
 def run_push_agent():
-    rob = SimulationRobobo()
+    rob = HardwareRobobo()
     env = PushEnv(rob)
     
     try:
-        model = PPO.load("/root/results/best_model_sb3.zip", env=env)
+        model = PPO.load("/root/results/model_ep_1350/policy.pth", env=env)
         obs = env.reset()
         total_reward = 0
         
@@ -362,4 +363,4 @@ def run_push_agent():
 
 if __name__ == "__main__":
     train_push_agent()
-    #run_push_agent()
+    # run_push_agent()
