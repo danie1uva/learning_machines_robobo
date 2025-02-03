@@ -484,7 +484,7 @@ class HardwareInferenceEnv(gym.Env):
         ], dtype=np.float32)
 
     def _detect_red_areas(self, frame):
-        camera_shift = 75
+        camera_shift = -50
         hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
         lower_red = np.array([0, 50, 50])
         upper_red = np.array([10, 255, 255])
@@ -515,7 +515,7 @@ class HardwareInferenceEnv(gym.Env):
         (Optional) Quick debugging method to see or record frames.
         In hardware, might save an image for logging or debugging.
         """
-        camera_shift = 75
+        camera_shift = -50
         frame = self.rob.read_image_front()
         frame = cv2.rotate(frame, cv2.ROTATE_180)
         hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
