@@ -3,7 +3,22 @@ import sys
 import torch 
 
 from robobo_interface import SimulationRobobo, HardwareRobobo
-from learning_machines import run_all_actions, test_irs, stop_at_obstacle, run_qlearning_classification, run_ppo, rob_move, QNetwork, go_to_space
+from learning_machines import (run_all_actions,
+                               train_dqn_with_coppeliasim, 
+                               rob_move, 
+                               go_to_space, 
+                               QNetwork, 
+                               run_dqn_with_coppeliasim, 
+                               run_all_actions,
+                               RobotNavigator,
+                               train_dqn_forage,
+                               run_dqn_forage,
+                               train_ppo_two_stage,
+                               train_dqn_two_stage,
+                               train_sac_dynamic_randomization,
+                               run_sac_evaluation_sim,
+                               run_sac_evaluation_hardware
+)
 
 
 if __name__ == "__main__":
@@ -15,13 +30,16 @@ if __name__ == "__main__":
         )
     elif sys.argv[1] == "--hardware":
         rob = HardwareRobobo(camera=True)
-        model = QNetwork()
-        model.load_state_dict(torch.load("model.pth"))
-        rob_move(model, rob)
+        run_all_actions(rob)
         
     elif sys.argv[1] == "--simulation":
-        rob = SimulationRobobo(identifier = 1) 
-        run_qlearning_classification(rob) 
+        rob = SimulationRobobo() 
+        run_all_actions(rob)
+
+    elif sys.argv[1] == "--simulation_inf":
+        weights_path = "/root/catkin_ws/policy.pth" 
+        rob = SimulationRobobo() 
+        run_dqn_with_coppeliasim(rob, weights_path) 
 
     elif sys.argv[1] == "--debug":
         model = QNetwork()
@@ -30,5 +48,46 @@ if __name__ == "__main__":
     elif sys.argv[1] == "--hardcode":
         rob = HardwareRobobo(camera=True)
         go_to_space(rob)
+
+    elif sys.argv[1] == "--test_controls":
+        rob = HardwareRobobo(camera=True)
+        run_all_actions(rob)
+
+    elif sys.argv[1] == "--forage" and sys.argv[2] == "--simulation":
+        rob = SimulationRobobo()
+        RobotNavigator(rob).forage() 
+
+    elif sys.argv[1] == "--forage" and sys.argv[2] == "--hardware":
+        rob = HardwareRobobo(camera=True)
+        RobotNavigator(rob, debug=True).forage() 
+
+    elif sys.argv[1] == "--train_forage":
+        rob = SimulationRobobo()
+        train_dqn_forage(rob)
+
+    elif sys.argv[1] == "--run_forage" and sys.argv[2] == "--simulation":
+        weights_path = "/root/catkin_ws/policy.pth" 
+        rob = SimulationRobobo()
+        run_dqn_forage(rob, weights_path)
+    
+    elif sys.argv[1] == "--run_forage" and sys.argv[2] == "--hardware":
+        weights_path = "/root/catkin_ws/policy.pth" 
+        rob = HardwareRobobo(camera=True)
+        run_dqn_forage(rob, weights_path)
+
+    elif sys.argv[1] == '--train_push_SAC':
+        rob = SimulationRobobo()
+        train_sac_dynamic_randomization(rob)
+
+    elif sys.argv[1] == "--run_push_SAC" and sys.argv[2] == "--simulation":
+        rob = SimulationRobobo()
+        model_path = "/root/catkin_ws/policy.pth"
+        run_sac_evaluation_sim(rob, model_path)
+
+    elif sys.argv[1] == "--run_push_SAC" and sys.argv[2] == "--hardware":
+        rob = HardwareRobobo(camera=True)
+        model_path = "/root/catkin_ws/policy.pth"
+        run_sac_evaluation_hardware(rob, model_path)
+
     else:
         raise ValueError(f"{sys.argv[1]} is not a valid argument.")

@@ -15,13 +15,17 @@ RUN apt-get update -y && apt-get install ffmpeg libsm6 libxext6 ros-noetic-openc
 
 # The python3 interpreter is already being shilled by ros:noetic, so no need for a venv.
 COPY ./requirements.txt /requirements.txt
-RUN python3 -m pip install -r /requirements.txt && rm /requirements.txt
+RUN python3 -m pip install --no-cache-dir -r /requirements.txt && rm /requirements.txt
+
 
 # This cd's into a new `catkin_ws` directory anyone starting the shell will end up in.
 WORKDIR /root/catkin_ws
 
 # This copies the local catkin_ws into the docker container.
 COPY ./catkin_ws .
+
+# Copy the pre-trained weights to the container
+ COPY ./sac_2025-01-30_22-01-50_policy.pth /root/catkin_ws/policy.pth 
 
 # Set up the envoirement to actually run the code
 COPY ./scripts/entrypoint.bash ./entrypoint.bash
