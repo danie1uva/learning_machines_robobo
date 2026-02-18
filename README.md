@@ -38,6 +38,7 @@ Consequently, we simplified. We switched to
 
 ### Week 3 (foraging, stronger results):
 ![Week 3 demo](simulations/week_3_demo.gif)
+
 The task is now multi-modal: collect green boxes quickly (visual data) while avoiding wall collisions (IR data).
 
 - Designed a structured state representation: the five front IR sensors normalized and a vision pipeline using color thresholding + cv2 bounding box extraction (normalized coordinates).
@@ -56,6 +57,7 @@ The task is now multi-modal: collect green boxes quickly (visual data) while avo
 
 ### Week 4 (puck pushing, strongest RL focus):
 ![Week 4 demo](simulations/week_4_demo.gif)
+
 We reformulated task as sequential control: 
   1. forage for the red puck, then 
   2. push it to the green goal zone
